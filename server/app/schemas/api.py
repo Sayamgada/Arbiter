@@ -7,6 +7,9 @@ class NegotiationRequest(BaseModel):
     merchant_id: str
     period: str
 
+    buyer_id: str
+    product_id: int
+
     buyer_signals: BuyerSignals
 
     product_price: float = Field(gt=0)
@@ -19,6 +22,7 @@ class NegotiationRequest(BaseModel):
 
 
 class NegotiationResponse(BaseModel):
+    transaction_id: str
     decision: str
     authority: str
     trust_score: float
