@@ -6,6 +6,7 @@ from app.core.redis import get_redis
 from app.schemas.api import NegotiationRequest, NegotiationResponse
 from app.services.buyer_service import BuyerService
 from app.services.decision_controller import NegotiationDecisionController
+from app.services.merchant_service import MerchantPolicyService
 from app.services.product_service import ProductService
 from app.services.transaction_service import TransactionService
 
@@ -47,17 +48,27 @@ def decide(
             detail="Product not found for merchant",
         )
 
+    merchant_policy = MerchantPolicyService(db).get_by_merchant_id(
+        request.merchant_id
+    )
+
+    if merchant_policy is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Merchant policy not found",
+        )
+
     controller = NegotiationDecisionController(get_redis())
 
     result = controller.decide(
         merchant_id=request.merchant_id,
         period=request.period,
         buyer_signals=request.buyer_signals,
-        product_price=request.product_price,
-        product_cost=request.product_cost,
+        product_price=product.price,
+        product_cost=product.cost,
         requested_discount_pct=request.requested_discount_pct,
-        max_discount_pct=request.max_discount_pct,
-        allocated_budget=request.allocated_budget,
+        max_discount_pct=merchant_policy.max_discount_pct,
+        allocated_budget=merchant_policy.daily_budget,
     )
 
     transaction = TransactionService(db).record_decision(
@@ -66,8 +77,8 @@ def decide(
         product_id=product.id,
         proposed_offer={
             "requested_discount_pct": request.requested_discount_pct,
-            "product_price": request.product_price,
-            "product_cost": request.product_cost,
+            "product_price": product.price,
+            "product_cost": product.cost,
         },
         result=result,
     )
