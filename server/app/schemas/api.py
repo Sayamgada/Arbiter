@@ -12,13 +12,10 @@ class NegotiationRequest(BaseModel):
 
     buyer_signals: BuyerSignals
 
-    product_price: float = Field(gt=0)
-    product_cost: float = Field(ge=0)
-
-    requested_discount_pct: float = Field(ge=0)
-    max_discount_pct: float = Field(ge=0)
-
-    allocated_budget: float = Field(ge=0)
+    requested_discount_pct: float = Field(
+        ge=0,
+        le=100,
+    )
 
 
 class NegotiationResponse(BaseModel):

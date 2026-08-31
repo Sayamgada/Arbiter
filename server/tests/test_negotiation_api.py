@@ -1,17 +1,22 @@
 from app.core.database import SessionLocal
 from app.core.redis import get_redis
 from app.main import app
-from app.models import AuditLog, Buyer, Product, Transaction
+from app.models import AuditLog, Buyer, MerchantPolicy, Product, Transaction
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-
 
 client = TestClient(app)
 
 
 def setup_test_data():
     db = SessionLocal()
-
+    policy = MerchantPolicy(
+        merchant_id="api-test-merchant",
+        max_discount_pct=12,
+        daily_budget=5000,
+        trust_full_threshold=80,
+        trust_restricted_threshold=40,
+    )
     buyer = Buyer(
         buyer_id="api-test-buyer",
         identity_confidence=100,
@@ -31,6 +36,7 @@ def setup_test_data():
         inventory=10,
     )
 
+    db.add(policy)
     db.add(buyer)
     db.add(product)
     db.commit()
@@ -50,27 +56,21 @@ def cleanup_test_data():
     db = SessionLocal()
 
     transactions = db.scalars(
-        select(Transaction).where(
-            Transaction.merchant_id == "api-test-merchant"
-        )
+        select(Transaction).where(Transaction.merchant_id == "api-test-merchant")
     ).all()
 
     for transaction in transactions:
-        db.query(AuditLog).filter(
-            AuditLog.transaction_id == transaction.id
-        ).delete()
+        db.query(AuditLog).filter(AuditLog.transaction_id == transaction.id).delete()
 
     db.query(Transaction).filter(
         Transaction.merchant_id == "api-test-merchant"
     ).delete()
 
-    db.query(Product).filter(
-        Product.merchant_id == "api-test-merchant"
+    db.query(Product).filter(Product.merchant_id == "api-test-merchant").delete()
+    db.query(MerchantPolicy).filter(
+        MerchantPolicy.merchant_id == "api-test-merchant"
     ).delete()
-
-    db.query(Buyer).filter(
-        Buyer.buyer_id == "api-test-buyer"
-    ).delete()
+    db.query(Buyer).filter(Buyer.buyer_id == "api-test-buyer").delete()
 
     db.commit()
     db.close()
@@ -97,11 +97,7 @@ def test_negotiation_persists_transaction_and_audit():
                 "violation_count": 0,
                 "behavior_score": 100,
             },
-            "product_price": 10000,
-            "product_cost": 7000,
             "requested_discount_pct": 10,
-            "max_discount_pct": 12,
-            "allocated_budget": 5000,
         },
     )
 
@@ -121,9 +117,7 @@ def test_negotiation_persists_transaction_and_audit():
     db = SessionLocal()
 
     transaction = db.scalar(
-        select(Transaction).where(
-            Transaction.transaction_id == data["transaction_id"]
-        )
+        select(Transaction).where(Transaction.transaction_id == data["transaction_id"])
     )
 
     assert transaction is not None
@@ -134,11 +128,7 @@ def test_negotiation_persists_transaction_and_audit():
     assert transaction.final_offer["discount_pct"] == 10
     assert transaction.final_offer["final_price"] == 9000
 
-    audit = db.scalar(
-        select(AuditLog).where(
-            AuditLog.transaction_id == transaction.id
-        )
-    )
+    audit = db.scalar(select(AuditLog).where(AuditLog.transaction_id == transaction.id))
 
     assert audit is not None
     assert audit.decision == "approve"
@@ -191,9 +181,7 @@ def test_inactive_buyer_returns_403():
     buyer_id, _, product_id = setup_test_data()
 
     db = SessionLocal()
-    buyer = db.scalar(
-        select(Buyer).where(Buyer.buyer_id == buyer_id)
-    )
+    buyer = db.scalar(select(Buyer).where(Buyer.buyer_id == buyer_id))
     buyer.is_active = False
     db.commit()
     db.close()
