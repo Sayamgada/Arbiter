@@ -33,8 +33,11 @@ class NegotiationDecisionController:
         3. Budget
         4. Offer
         5. Final safety validation
+        6. Optional budget reservation
 
     The offer engine is never allowed to override hard constraints.
+
+    Budget reservation can be deferred for multi-round negotiations.
     """
 
     def __init__(self, redis_client):
@@ -54,6 +57,7 @@ class NegotiationDecisionController:
         requested_discount_pct: float,
         max_discount_pct: float,
         allocated_budget: float,
+        reserve_budget: bool = True,
     ) -> NDCResult:
 
         # ---------------------------------------------------------
@@ -140,7 +144,7 @@ class NegotiationDecisionController:
         # ---------------------------------------------------------
         # 5. FINAL SAFETY VALIDATION
         # ---------------------------------------------------------
-        if offer.discount_pct > max_discount_pct:
+        if offer.discount_pct > bounds.max_discount_pct:
             return NDCResult(
                 decision=DecisionType.RESTRICT,
                 authority=trust.authority,
@@ -165,28 +169,7 @@ class NegotiationDecisionController:
             )
 
         # ---------------------------------------------------------
-        # 6. RESERVE BUDGET
-        # ---------------------------------------------------------
-        reservation = self.budget_manager.reserve(
-            merchant_id=merchant_id,
-            period=period,
-            discount_value=offer.discount_value,
-        )
-
-        if not reservation.allowed:
-            return NDCResult(
-                decision=DecisionType.RESTRICT,
-                authority=trust.authority,
-                trust_score=trust.score,
-                discount_pct=0.0,
-                discount_value=0.0,
-                final_price=product_price,
-                budget_remaining=reservation.remaining,
-                reason=reservation.reason,
-            )
-
-        # ---------------------------------------------------------
-        # 7. FINAL DECISION
+        # 6. FINAL DECISION
         # ---------------------------------------------------------
         if trust.authority == AuthorityTier.RESTRICTED:
             decision = DecisionType.RESTRICT
@@ -195,6 +178,32 @@ class NegotiationDecisionController:
         else:
             decision = DecisionType.COUNTER
 
+        # ---------------------------------------------------------
+        # 7. OPTIONAL BUDGET RESERVATION
+        # ---------------------------------------------------------
+        if reserve_budget:
+            reservation = self.budget_manager.reserve(
+                merchant_id=merchant_id,
+                period=period,
+                discount_value=offer.discount_value,
+            )
+
+            if not reservation.allowed:
+                return NDCResult(
+                    decision=DecisionType.RESTRICT,
+                    authority=trust.authority,
+                    trust_score=trust.score,
+                    discount_pct=0.0,
+                    discount_value=0.0,
+                    final_price=product_price,
+                    budget_remaining=reservation.remaining,
+                    reason=reservation.reason,
+                )
+
+            budget_remaining = reservation.remaining
+        else:
+            budget_remaining = remaining_budget
+
         return NDCResult(
             decision=decision,
             authority=trust.authority,
@@ -202,6 +211,25 @@ class NegotiationDecisionController:
             discount_pct=offer.discount_pct,
             discount_value=offer.discount_value,
             final_price=offer.final_price,
-            budget_remaining=reservation.remaining,
+            budget_remaining=budget_remaining,
             reason=offer.reason,
+        )
+
+    def commit_offer(
+        self,
+        *,
+        merchant_id: str,
+        period: str,
+        discount_value: float,
+    ):
+        """
+        Commit an already-authorized offer to the autonomy budget.
+
+        Used when a buyer accepts an offer after one or more
+        negotiation rounds.
+        """
+        return self.budget_manager.reserve(
+            merchant_id=merchant_id,
+            period=period,
+            discount_value=discount_value,
         )
