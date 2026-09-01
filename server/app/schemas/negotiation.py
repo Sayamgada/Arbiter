@@ -1,6 +1,10 @@
+
 from enum import Enum
 
 from pydantic import BaseModel, Field
+
+from app.agents.protocol import AgentResponse, NegotiationMessage
+
 
 class AuthorityTier(str, Enum):
     FULL = "full"
@@ -55,3 +59,43 @@ class DecisionResult(BaseModel):
     offer_price: float = Field(ge=0)
     require_confirmation: bool = False
     reason: str
+
+
+class NegotiationSessionResult(BaseModel):
+    session_id: str
+    status: NegotiationStatus
+    rounds: int = Field(ge=0)
+    final_price: float | None = None
+    final_discount_pct: float | None = None
+    message: str
+    messages: list[
+        NegotiationMessage | AgentResponse
+    ] = Field(default_factory=list)
+
+
+class TransactionStatus(str, Enum):
+    NEGOTIATING = "negotiating"
+    ACCEPTED = "accepted"
+    PAYMENT_PENDING = "payment_pending"
+    PAYMENT_CREATED = "payment_created"
+    PAYMENT_AUTHORIZED = "payment_authorized"
+    COMPLETED = "completed"
+    PAYMENT_FAILED = "payment_failed"
+    CANCELLED = "cancelled"
+
+
+class NegotiationSessionRequest(BaseModel):
+    merchant_id: str
+    period: str
+    buyer_id: str
+    product_id: int
+    buyer_signals: BuyerSignals
+    requested_discount_pct: float = Field(
+        ge=0,
+        le=100,
+    )
+    max_rounds: int = Field(
+        ge=1,
+        le=10,
+        default=5,
+    )

@@ -20,6 +20,7 @@ from app.schemas.api import (
     NegotiationSessionResponse,
 )
 from app.services.decision_controller import NegotiationDecisionController
+from app.services.payment_service import PaymentService
 
 router = APIRouter()
 
@@ -80,8 +81,7 @@ def decide(
         max_discount_pct=merchant_policy.max_discount_pct,
         allocated_budget=merchant_policy.daily_budget,
     )
-
-    transaction = TransactionService(db).record_decision(
+    transaction = TransactionService(db).create_from_decision(
         buyer_id=buyer.id,
         merchant_id=request.merchant_id,
         product_id=product.id,

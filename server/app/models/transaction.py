@@ -1,15 +1,19 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+from app.schemas.negotiation import TransactionStatus
 
 
 class Transaction(Base):
     __tablename__ = "transactions"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
 
     transaction_id: Mapped[str] = mapped_column(
         String(100),
@@ -35,14 +39,29 @@ class Transaction(Base):
         nullable=False,
     )
 
-    proposed_offer: Mapped[dict] = mapped_column(JSON, nullable=False)
+    proposed_offer: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+
     final_offer: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,
         default=dict,
     )
 
-    decision: Mapped[str] = mapped_column(String(30), nullable=False)
+    decision: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default=TransactionStatus.PAYMENT_PENDING.value,
+        index=True,
+    )
+
     razorpay_ref: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -55,6 +74,14 @@ class Transaction(Base):
         nullable=False,
     )
 
-    buyer = relationship("Buyer", back_populates="transactions")
+    buyer = relationship(
+        "Buyer",
+        back_populates="transactions",
+    )
+
     product = relationship("Product")
-    audit_logs = relationship("AuditLog", back_populates="transaction")
+
+    audit_logs = relationship(
+        "AuditLog",
+        back_populates="transaction",
+    )

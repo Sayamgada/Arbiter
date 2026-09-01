@@ -7,8 +7,10 @@ from app.agents.protocol import (
     NegotiationMessage,
 )
 from app.agents.seller_agent import SellerGrowthAgent
-from app.schemas.negotiation import NegotiationStatus
-
+from app.schemas.negotiation import (
+    NegotiationSessionResult,
+    NegotiationStatus,
+)
 
 class NegotiationSessionResult(BaseModel):
     session_id: str
