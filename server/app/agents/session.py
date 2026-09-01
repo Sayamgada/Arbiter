@@ -1,5 +1,3 @@
-from pydantic import BaseModel, Field
-
 from app.agents.buyer_agent import BuyerAgent
 from app.agents.protocol import (
     AgentResponse,
@@ -11,18 +9,6 @@ from app.schemas.negotiation import (
     NegotiationSessionResult,
     NegotiationStatus,
 )
-
-class NegotiationSessionResult(BaseModel):
-    session_id: str
-    status: NegotiationStatus
-    rounds: int = Field(ge=0)
-    final_price: float | None = None
-    final_discount_pct: float | None = None
-    message: str
-    messages: list[
-        NegotiationMessage | AgentResponse
-    ] = Field(default_factory=list)
-
 
 class NegotiationSession:
     """

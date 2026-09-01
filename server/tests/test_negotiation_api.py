@@ -245,3 +245,116 @@ def test_wrong_merchant_product_returns_404():
     assert response.json()["detail"] == "Product not found for merchant"
 
     cleanup_test_data()
+
+def test_negotiation_session_accepts_valid_offer():
+    cleanup_test_data()
+    redis = get_redis()
+    redis.flushdb()
+
+    buyer_id, _, product_id = setup_test_data()
+
+    response = client.post(
+        "/api/v1/negotiation/session",
+        json={
+            "merchant_id": "api-test-merchant",
+            "period": "test",
+            "buyer_id": buyer_id,
+            "product_id": product_id,
+            "buyer_signals": {
+                "identity_confidence": 100,
+                "intent_confidence": 100,
+                "history_score": 100,
+                "violation_count": 0,
+                "behavior_score": 100,
+            },
+            "requested_discount_pct": 10,
+            "max_rounds": 5,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "accepted"
+    assert data["rounds"] == 1
+    assert data["final_price"] == 9000
+    assert data["final_discount_pct"] == 10
+    assert len(data["messages"]) == 3
+
+    cleanup_test_data()
+
+
+def test_negotiation_session_blocks_low_trust_buyer():
+    cleanup_test_data()
+    redis = get_redis()
+    redis.flushdb()
+
+    buyer_id, _, product_id = setup_test_data()
+
+    response = client.post(
+        "/api/v1/negotiation/session",
+        json={
+            "merchant_id": "api-test-merchant",
+            "period": "test",
+            "buyer_id": buyer_id,
+            "product_id": product_id,
+            "buyer_signals": {
+                "identity_confidence": 10,
+                "intent_confidence": 10,
+                "history_score": 10,
+                "violation_count": 5,
+                "behavior_score": 10,
+            },
+            "requested_discount_pct": 10,
+            "max_rounds": 5,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "blocked"
+    assert data["final_price"] is None
+    assert data["final_discount_pct"] is None
+
+    cleanup_test_data()
+
+
+def test_negotiation_session_expires_when_discount_cannot_be_met():
+    cleanup_test_data()
+    redis = get_redis()
+    redis.flushdb()
+
+    buyer_id, _, product_id = setup_test_data()
+
+    response = client.post(
+        "/api/v1/negotiation/session",
+        json={
+            "merchant_id": "api-test-merchant",
+            "period": "test",
+            "buyer_id": buyer_id,
+            "product_id": product_id,
+            "buyer_signals": {
+                "identity_confidence": 100,
+                "intent_confidence": 100,
+                "history_score": 100,
+                "violation_count": 0,
+                "behavior_score": 100,
+            },
+            "requested_discount_pct": 20,
+            "max_rounds": 3,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["status"] == "expired"
+    assert data["rounds"] == 3
+    assert data["final_price"] is None
+    assert data["final_discount_pct"] is None
+
+    cleanup_test_data()

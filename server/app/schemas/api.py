@@ -20,10 +20,8 @@ class NegotiationSessionRequest(BaseModel):
     buyer_id: str
     product_id: int
     buyer_signals: BuyerSignals
-    requested_discount_pct: float = Field(
-        ge=0,
-        le=100,
-    )
+    requested_discount_pct: float
+    max_rounds: int = Field(default=5, ge=1, le=10)
 
 class NegotiationResponse(BaseModel):
     transaction_id: str
