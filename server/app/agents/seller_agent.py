@@ -10,6 +10,7 @@ from app.schemas.negotiation import (
 from app.services.decision_controller import (
     NegotiationDecisionController,
 )
+from app.services.llm_service import LLMService
 
 
 class SellerGrowthAgent:
@@ -20,6 +21,13 @@ class SellerGrowthAgent:
     authorization authority.
 
     Every proposed offer must pass through the NDC.
+
+    The LLM is used only to generate natural-language
+    negotiation responses. It never determines:
+    - discount authorization
+    - budget usage
+    - trust
+    - transaction approval
     """
 
     def __init__(
@@ -31,6 +39,7 @@ class SellerGrowthAgent:
         buyer_signals: BuyerSignals,
         max_discount_pct: float,
         allocated_budget: float,
+        llm_service: LLMService | None = None,
     ):
         self.controller = controller
         self.merchant_id = merchant_id
@@ -38,6 +47,7 @@ class SellerGrowthAgent:
         self.buyer_signals = buyer_signals
         self.max_discount_pct = max_discount_pct
         self.allocated_budget = allocated_budget
+        self.llm = llm_service
 
     def evaluate_offer(
         self,
@@ -47,6 +57,7 @@ class SellerGrowthAgent:
         product_cost: float,
     ) -> AgentResponse:
 
+        # NDC is the sole source of authorization.
         result = self.controller.decide(
             merchant_id=self.merchant_id,
             period=self.period,
@@ -76,6 +87,13 @@ class SellerGrowthAgent:
         else:
             message_type = MessageType.COUNTER_OFFER
 
+        message = self._build_message(
+            decision=result.decision,
+            discount_pct=result.discount_pct,
+            final_price=result.final_price,
+            reason=result.reason,
+        )
+
         return AgentResponse(
             session_id=request.session_id,
             round_number=request.round_number,
@@ -85,11 +103,7 @@ class SellerGrowthAgent:
             requires_confirmation=(
                 result.decision == DecisionType.RESTRICT
             ),
-            message=self._build_message(
-                result.discount_pct,
-                result.final_price,
-                result.reason,
-            ),
+            message=message,
         )
 
     def commit_accepted_offer(
@@ -107,12 +121,62 @@ class SellerGrowthAgent:
             discount_value=discount_value,
         )
 
-    @staticmethod
     def _build_message(
+        self,
+        *,
+        decision: DecisionType,
         discount_pct: float,
         final_price: float,
         reason: str,
     ) -> str:
+        """
+        Generate natural-language seller communication.
+
+        All numerical values come from the deterministic NDC result.
+        The LLM cannot change them.
+        """
+
+        if self.llm is None:
+            return self._fallback_message(
+                decision=decision,
+                discount_pct=discount_pct,
+                final_price=final_price,
+                reason=reason,
+            )
+
+        return self.llm.generate(
+            system_prompt=(
+                "You are the seller-side commerce agent for Arbiter. "
+                "Generate concise, professional negotiation language. "
+                "You MUST preserve the supplied price and discount exactly. "
+                "You MUST NOT invent, change, or negotiate numerical values. "
+                "The authorization decision has already been made by "
+                "the deterministic transaction controller."
+            ),
+            user_prompt=(
+                f"Decision: {decision.value}\n"
+                f"Authorized discount: {discount_pct:.2f}%\n"
+                f"Authorized final price: ₹{final_price:.2f}\n"
+                f"Controller reasoning: {reason}\n\n"
+                "Write one short seller response to the buyer."
+            ),
+        )
+
+    @staticmethod
+    def _fallback_message(
+        *,
+        decision: DecisionType,
+        discount_pct: float,
+        final_price: float,
+        reason: str,
+    ) -> str:
+        if decision == DecisionType.RESTRICT:
+            return (
+                f"I can offer {discount_pct:.2f}% off, "
+                f"bringing the price to ₹{final_price:.2f}. "
+                f"Confirmation is required. {reason}."
+            )
+
         return (
             f"I can offer {discount_pct:.2f}% off, "
             f"bringing the price to ₹{final_price:.2f}. "

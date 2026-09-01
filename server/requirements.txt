@@ -11,3 +11,5 @@ pytest
 pytest-asyncio
 alembic
 razorpay
+openai
+groq

@@ -55,7 +55,7 @@ def test_create_from_decision_approved(db_session):
 
     assert transaction.transaction_id.startswith("txn_")
     assert transaction.decision == "approve"
-    assert transaction.status == TransactionStatus.PAYMENT_PENDING.value
+    assert transaction.status == TransactionStatus.ACCEPTED.value
     assert transaction.final_offer["discount_pct"] == 10.0
     assert transaction.final_offer["discount_value"] == 100.0
     assert transaction.final_offer["final_price"] == 900.0
@@ -179,5 +179,6 @@ def test_get_by_transaction_id_missing(db_session):
     service = TransactionService(db_session)
 
     found = service.get_by_transaction_id("txn_does_not_exist")
+
 
     assert found is None

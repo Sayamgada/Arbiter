@@ -10,6 +10,7 @@ from app.schemas.negotiation import (
     NegotiationStatus,
 )
 
+
 class NegotiationSession:
     """
     Coordinates a multi-round buyer/seller negotiation.

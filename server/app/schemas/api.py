@@ -1,7 +1,12 @@
 from pydantic import BaseModel, Field
 
 from app.agents.protocol import AgentResponse, NegotiationMessage
-from app.schemas.negotiation import BuyerSignals, NegotiationStatus
+from app.schemas.negotiation import (
+    BuyerSignals,
+    NegotiationStatus,
+    TransactionStatus,
+)
+
 class NegotiationRequest(BaseModel):
     merchant_id: str
     period: str
@@ -13,15 +18,21 @@ class NegotiationRequest(BaseModel):
         le=100,
     )
 
-
 class NegotiationSessionRequest(BaseModel):
     merchant_id: str
     period: str
     buyer_id: str
     product_id: int
     buyer_signals: BuyerSignals
-    requested_discount_pct: float
-    max_rounds: int = Field(default=5, ge=1, le=10)
+    requested_discount_pct: float = Field(
+        ge=0,
+        le=100,
+    )
+    max_rounds: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+    )
 
 class NegotiationResponse(BaseModel):
     transaction_id: str
@@ -34,6 +45,7 @@ class NegotiationResponse(BaseModel):
     budget_remaining: float
     reason: str
 
+
 class NegotiationSessionResponse(BaseModel):
     session_id: str
     status: NegotiationStatus
@@ -42,5 +54,37 @@ class NegotiationSessionResponse(BaseModel):
     final_discount_pct: float | None
     message: str
     messages: list[NegotiationMessage | AgentResponse] = Field(
-    default_factory=list
+        default_factory=list
     )
+
+class PaymentOrderRequest(BaseModel):
+    transaction_id: str
+
+
+class PaymentOrderResponse(BaseModel):
+    transaction_id: str
+    razorpay_order_id: str
+    amount: float
+    currency: str
+    status: TransactionStatus
+
+
+class PaymentOrderResponse(BaseModel):
+    transaction_id: str
+    razorpay_order_id: str
+    amount: float
+    currency: str
+    status: TransactionStatus
+    
+class PaymentVerifyRequest(BaseModel):
+    transaction_id: str
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+class PaymentVerifyResponse(BaseModel):
+    transaction_id: str
+    razorpay_payment_id: str
+    status: TransactionStatus
+    message: str

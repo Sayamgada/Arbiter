@@ -32,12 +32,12 @@ class PaymentService:
         currency: str = "INR",
         receipt: str,
     ) -> dict:
-        """Create a Razorpay order and return its response."""
-
         if amount <= 0:
-            raise ValueError("Payment amount must be greater than zero")
+            raise ValueError(
+                "Payment amount must be greater than zero"
+            )
 
-        order = self.client.order.create(
+        return self.client.order.create(
             {
                 "amount": int(round(amount * 100)),
                 "currency": currency,
@@ -45,4 +45,19 @@ class PaymentService:
             }
         )
 
-        return order
+    def verify_payment(
+        self,
+        *,
+        order_id: str,
+        payment_id: str,
+        signature: str,
+    ) -> bool:
+        self.client.utility.verify_payment_signature(
+            {
+                "razorpay_order_id": order_id,
+                "razorpay_payment_id": payment_id,
+                "razorpay_signature": signature,
+            }
+        )
+
+        return True

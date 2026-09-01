@@ -37,12 +37,6 @@ class TransactionService:
         Non-approved negotiations are persisted as CANCELLED.
         """
 
-        status = (
-            TransactionStatus.PAYMENT_PENDING.value
-            if result.decision.value == "approve"
-            else TransactionStatus.CANCELLED.value
-        )
-
         transaction = Transaction(
             transaction_id=f"txn_{uuid4().hex}",
             buyer_id=buyer_id,
@@ -55,7 +49,11 @@ class TransactionService:
                 "final_price": result.final_price,
             },
             decision=result.decision.value,
-            status=status,
+            status=(
+                TransactionStatus.ACCEPTED.value
+                if result.decision.value == "approve"
+                else TransactionStatus.CANCELLED.value
+            ),
             razorpay_ref="",
         )
 
@@ -186,3 +184,16 @@ class TransactionService:
                 f"Invalid transaction status transition: "
                 f"{current} -> {target}"
             )
+
+    def mark_payment_pending(
+        self,
+        *,
+        transaction: Transaction,
+    ) -> Transaction:
+        """
+        Move an accepted transaction into the payment lifecycle.
+        """
+        return self.update_status(
+            transaction=transaction,
+            status=TransactionStatus.PAYMENT_PENDING,
+    )
