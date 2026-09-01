@@ -8,6 +8,7 @@ from app.schemas.negotiation import (
     DecisionType,
 )
 from app.services.decision_controller import (
+    NDCResult,
     NegotiationDecisionController,
 )
 from app.services.llm_service import LLMService
@@ -49,6 +50,10 @@ class SellerGrowthAgent:
         self.allocated_budget = allocated_budget
         self.llm = llm_service
 
+        # The latest deterministic authorization result.
+        # This is the source of truth for transaction persistence.
+        self.last_decision_result: NDCResult | None = None
+
     def evaluate_offer(
         self,
         request: NegotiationMessage,
@@ -69,6 +74,9 @@ class SellerGrowthAgent:
             allocated_budget=self.allocated_budget,
             reserve_budget=False,
         )
+
+        # Preserve the deterministic result for the transaction layer.
+        self.last_decision_result = result
 
         if result.decision == DecisionType.BLOCK:
             return AgentResponse(
@@ -154,10 +162,14 @@ class SellerGrowthAgent:
                 "the deterministic transaction controller."
             ),
             user_prompt=(
-                f"Decision: {decision.value}\n"
-                f"Authorized discount: {discount_pct:.2f}%\n"
-                f"Authorized final price: ₹{final_price:.2f}\n"
-                f"Controller reasoning: {reason}\n\n"
+                "Decision: "
+                f"{decision.value}\n"
+                "Authorized discount: "
+                f"{discount_pct:.2f}%\n"
+                "Authorized final price: "
+                f"₹{final_price:.2f}\n"
+                "Controller reasoning: "
+                f"{reason}\n\n"
                 "Write one short seller response to the buyer."
             ),
         )

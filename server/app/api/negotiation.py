@@ -15,8 +15,10 @@ from app.schemas.api import (
     PaymentVerifyResponse,
 )
 
-from app.schemas.negotiation import TransactionStatus
-
+from app.schemas.negotiation import (
+    NegotiationStatus,
+    TransactionStatus,
+)
 from app.services.buyer_service import BuyerService
 from app.services.decision_controller import NegotiationDecisionController
 from app.services.merchant_service import MerchantPolicyService
@@ -124,7 +126,6 @@ def decide(
         reason=result.reason,
     )
 
-
 @router.post(
     "/api/v1/negotiation/session",
     response_model=NegotiationSessionResponse,
@@ -220,14 +221,50 @@ def start_session(
 
     result = session.start()
 
+    transaction_id = None
+
+    if result.status == NegotiationStatus.ACCEPTED:
+        decision_result = seller_agent.last_decision_result
+
+        if decision_result is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Negotiation was accepted but "
+                    "authorization result was unavailable."
+                ),
+            )
+
+        transaction = TransactionService(
+            db
+        ).create_from_decision(
+            buyer_id=buyer.id,
+            merchant_id=request.merchant_id,
+            product_id=product.id,
+            proposed_offer={
+                "session_id": result.session_id,
+                "requested_discount_pct": (
+                    request.requested_discount_pct
+                ),
+                "product_price": product.price,
+                "product_cost": product.cost,
+                "allocated_budget": (
+                    merchant_policy.daily_budget
+                ),
+            },
+            result=decision_result,
+            session_id=result.session_id,
+        )
+
+        transaction_id = transaction.transaction_id
+
     return NegotiationSessionResponse(
         session_id=result.session_id,
+        transaction_id=transaction_id,
         status=result.status,
         rounds=result.rounds,
         final_price=result.final_price,
-        final_discount_pct=(
-            result.final_discount_pct
-        ),
+        final_discount_pct=result.final_discount_pct,
         message=result.message,
         messages=result.messages,
     )

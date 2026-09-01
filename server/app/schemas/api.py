@@ -7,6 +7,7 @@ from app.schemas.negotiation import (
     TransactionStatus,
 )
 
+
 class NegotiationRequest(BaseModel):
     merchant_id: str
     period: str
@@ -17,6 +18,7 @@ class NegotiationRequest(BaseModel):
         ge=0,
         le=100,
     )
+
 
 class NegotiationSessionRequest(BaseModel):
     merchant_id: str
@@ -34,6 +36,7 @@ class NegotiationSessionRequest(BaseModel):
         le=10,
     )
 
+
 class NegotiationResponse(BaseModel):
     transaction_id: str
     decision: str
@@ -48,14 +51,16 @@ class NegotiationResponse(BaseModel):
 
 class NegotiationSessionResponse(BaseModel):
     session_id: str
+    transaction_id: str | None
     status: NegotiationStatus
     rounds: int
     final_price: float | None
     final_discount_pct: float | None
     message: str
-    messages: list[NegotiationMessage | AgentResponse] = Field(
-        default_factory=list
-    )
+    messages: list[
+        NegotiationMessage | AgentResponse
+    ] = Field(default_factory=list)
+
 
 class PaymentOrderRequest(BaseModel):
     transaction_id: str
@@ -69,13 +74,6 @@ class PaymentOrderResponse(BaseModel):
     status: TransactionStatus
 
 
-class PaymentOrderResponse(BaseModel):
-    transaction_id: str
-    razorpay_order_id: str
-    amount: float
-    currency: str
-    status: TransactionStatus
-    
 class PaymentVerifyRequest(BaseModel):
     transaction_id: str
     razorpay_order_id: str

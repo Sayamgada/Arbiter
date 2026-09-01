@@ -16,9 +16,10 @@ class NegotiationSession:
     Coordinates a multi-round buyer/seller negotiation.
 
     The session manages conversation state, but it does not
-    make authorization decisions. Seller offers are always
-    evaluated by the Negotiation Decision Controller through
-    SellerGrowthAgent.
+    make authorization decisions or persist transactions.
+
+    Seller offers are always evaluated by the
+    Negotiation Decision Controller through SellerGrowthAgent.
     """
 
     def __init__(
@@ -31,14 +32,10 @@ class NegotiationSession:
         max_rounds: int = 5,
     ):
         if product_price <= 0:
-            raise ValueError(
-                "Product price must be positive"
-            )
+            raise ValueError("Product price must be positive")
 
         if product_cost < 0:
-            raise ValueError(
-                "Product cost cannot be negative"
-            )
+            raise ValueError("Product cost cannot be negative")
 
         if product_cost > product_price:
             raise ValueError(
@@ -68,9 +65,6 @@ class NegotiationSession:
         self.authorized_discount_pct: float | None = None
 
     def start(self) -> NegotiationSessionResult:
-        """
-        Start the negotiation with the buyer's initial request.
-        """
         if self.status != NegotiationStatus.ACTIVE:
             raise RuntimeError(
                 "Negotiation session is no longer active"
@@ -229,9 +223,7 @@ class NegotiationSession:
 
         self.status = NegotiationStatus.ACCEPTED
 
-        self.authorized_discount_value = (
-            discount_value
-        )
+        self.authorized_discount_value = discount_value
 
         return NegotiationSessionResult(
             session_id=seller_response.session_id,

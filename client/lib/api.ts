@@ -47,6 +47,7 @@ export type NegotiationMessage = {
 
 export type NegotiationSessionResponse = {
   session_id: string;
+  transaction_id: string | null;
   status: "active" | "accepted" | "rejected" | "blocked" | "expired";
   rounds: number;
   final_price: number | null;
@@ -54,7 +55,84 @@ export type NegotiationSessionResponse = {
   message: string;
   messages: NegotiationMessage[];
 };
+export type PaymentOrderResponse = {
+  transaction_id: string;
+  razorpay_order_id: string;
+  amount: number;
+  currency: string;
+  status:
+    | "payment_created"
+    | "payment_pending";
+};
 
+export type PaymentVerifyResponse = {
+  transaction_id: string;
+  razorpay_payment_id: string;
+  status: "payment_authorized";
+  message: string;
+};
+
+
+export async function createPaymentOrder(
+  transactionId: string,
+): Promise<PaymentOrderResponse> {
+  const response = await fetch(
+    `${API_URL}/api/v1/payment/order`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+
+    throw new Error(
+      `Payment order failed: ${response.status} ${error}`,
+    );
+  }
+
+  return response.json();
+}
+
+
+export async function verifyPayment(
+  transactionId: string,
+  razorpayOrderId: string,
+  razorpayPaymentId: string,
+  razorpaySignature: string,
+): Promise<PaymentVerifyResponse> {
+  const response = await fetch(
+    `${API_URL}/api/v1/payment/verify`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_signature: razorpaySignature,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+
+    throw new Error(
+      `Payment verification failed: ${response.status} ${error}`,
+    );
+  }
+
+  return response.json();
+}
 export async function getDemoContext(): Promise<DemoContext> {
   const response = await fetch(
     `${API_URL}/api/v1/demo/context`,

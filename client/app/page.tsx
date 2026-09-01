@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 
 import {
+  createPaymentOrder,
   getDemoContext,
   startNegotiation,
   type DemoContext,
   type NegotiationMessage,
   type NegotiationSessionResponse,
+  type PaymentOrderResponse,
 } from "@/lib/api";
-
 function money(value: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -52,6 +53,11 @@ export default function Home() {
   const [discount, setDiscount] = useState(10);
   const [negotiation, setNegotiation] =
     useState<NegotiationSessionResponse | null>(null);
+  const [paymentOrder, setPaymentOrder] = useState<PaymentOrderResponse | null>(
+    null,
+  );
+
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [negotiating, setNegotiating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +89,27 @@ export default function Home() {
       setNegotiating(false);
     }
   }
+  async function handlePayment() {
+    if (!negotiation?.transaction_id) {
+      setError("No transaction is available for payment.");
+      return;
+    }
 
+    setPaymentLoading(true);
+    setError(null);
+
+    try {
+      const order = await createPaymentOrder(negotiation.transaction_id);
+
+      setPaymentOrder(order);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to create payment order.",
+      );
+    } finally {
+      setPaymentLoading(false);
+    }
+  }
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0a0a0a] text-white">
@@ -532,13 +558,38 @@ export default function Home() {
 
                   <button
                     type="button"
-                    className="mt-5 rounded-xl bg-white px-8 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200"
-                    onClick={() => {
-                      // Payment flow will be connected here.
-                    }}
+                    disabled={paymentLoading || !negotiation.transaction_id}
+                    className="mt-5 rounded-xl bg-white px-8 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={handlePayment}
                   >
-                    PROCEED TO PAYMENT
+                    {paymentLoading
+                      ? "CREATING PAYMENT..."
+                      : "PROCEED TO PAYMENT"}
                   </button>
+                  {paymentOrder && (
+                    <div className="mt-6 w-full max-w-3xl rounded-xl border border-zinc-800 bg-black p-5">
+                      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                        Payment order created
+                      </p>
+
+                      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                        <Metric
+                          label="Order ID"
+                          value={paymentOrder.razorpay_order_id}
+                        />
+
+                        <Metric
+                          label="Amount"
+                          value={money(paymentOrder.amount)}
+                        />
+
+                        <Metric
+                          label="Status"
+                          value={paymentOrder.status.toUpperCase()}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

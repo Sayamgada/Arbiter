@@ -50,7 +50,7 @@ class TransactionService:
             },
             decision=result.decision.value,
             status=(
-                TransactionStatus.ACCEPTED.value
+                TransactionStatus.PAYMENT_PENDING.value
                 if result.decision.value == "approve"
                 else TransactionStatus.CANCELLED.value
             ),
