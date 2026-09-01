@@ -2,7 +2,6 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-
 class AuthorityTier(str, Enum):
     FULL = "full"
     RESTRICTED = "restricted"
@@ -14,6 +13,14 @@ class DecisionType(str, Enum):
     COUNTER = "counter"
     RESTRICT = "restrict"
     BLOCK = "block"
+
+
+class NegotiationStatus(str, Enum):
+    ACTIVE = "active"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    BLOCKED = "blocked"
+    EXPIRED = "expired"
 
 
 class BuyerSignals(BaseModel):

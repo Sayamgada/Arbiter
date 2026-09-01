@@ -35,15 +35,15 @@ class NegotiationMessage(BaseModel):
 class AgentResponse(BaseModel):
     session_id: str
     round_number: int
-
     message_type: MessageType
-
     price: float = Field(gt=0)
     discount_pct: float = Field(
         ge=0,
         le=100,
     )
-
+    discount_value: float = Field(
+        ge=0,
+        default=0,
+    )
     message: str
-
     requires_confirmation: bool = False

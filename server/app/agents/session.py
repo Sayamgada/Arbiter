@@ -1,5 +1,3 @@
-from enum import Enum
-
 from pydantic import BaseModel, Field
 
 from app.agents.buyer_agent import BuyerAgent
@@ -9,14 +7,7 @@ from app.agents.protocol import (
     NegotiationMessage,
 )
 from app.agents.seller_agent import SellerGrowthAgent
-
-
-class NegotiationStatus(str, Enum):
-    ACTIVE = "active"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    BLOCKED = "blocked"
-    EXPIRED = "expired"
+from app.schemas.negotiation import NegotiationStatus
 
 
 class NegotiationSessionResult(BaseModel):
@@ -26,6 +17,9 @@ class NegotiationSessionResult(BaseModel):
     final_price: float | None = None
     final_discount_pct: float | None = None
     message: str
+    messages: list[
+        NegotiationMessage | AgentResponse
+    ] = Field(default_factory=list)
 
 
 class NegotiationSession:
@@ -106,7 +100,6 @@ class NegotiationSession:
         self,
         request: NegotiationMessage,
     ) -> NegotiationSessionResult:
-
         seller_response = self.seller.evaluate_offer(
             request,
             product_price=self.product_price,
@@ -125,6 +118,7 @@ class NegotiationSession:
                 final_price=None,
                 final_discount_pct=None,
                 message=seller_response.message,
+                messages=self.messages,
             )
 
         self.authorized_price = seller_response.price
@@ -140,7 +134,6 @@ class NegotiationSession:
         self,
         seller_response: AgentResponse,
     ) -> NegotiationSessionResult:
-
         buyer_response = self.buyer.respond_to_offer(
             price=seller_response.price,
             discount_pct=seller_response.discount_pct,
@@ -171,13 +164,13 @@ class NegotiationSession:
             final_price=None,
             final_discount_pct=None,
             message=buyer_response.message,
+            messages=self.messages,
         )
 
     def _continue_negotiation(
         self,
         buyer_response: AgentResponse,
     ) -> NegotiationSessionResult:
-
         if self.round_number >= self.max_rounds:
             self.status = NegotiationStatus.EXPIRED
 
@@ -191,6 +184,7 @@ class NegotiationSession:
                     "Negotiation ended because the "
                     "maximum number of rounds was reached."
                 ),
+                messages=self.messages,
             )
 
         self.round_number += 1
@@ -217,7 +211,6 @@ class NegotiationSession:
         self,
         seller_response: AgentResponse,
     ) -> NegotiationSessionResult:
-
         discount_value = round(
             self.product_price
             * seller_response.discount_pct
@@ -242,6 +235,7 @@ class NegotiationSession:
                     "The offer was authorized, but the "
                     "autonomy budget could not be committed."
                 ),
+                messages=self.messages,
             )
 
         self.status = NegotiationStatus.ACCEPTED
@@ -259,4 +253,5 @@ class NegotiationSession:
             message=(
                 "Negotiation accepted and budget committed."
             ),
+            messages=self.messages,
         )

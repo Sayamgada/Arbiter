@@ -196,3 +196,111 @@ def test_authorized_offer_can_be_committed_later():
 
     assert reservation.allowed is True
     assert reservation.remaining == 4000
+
+def test_restricted_trust_requires_restriction():
+    controller = make_controller()
+
+    # 70 trust with the default weighting should fall into RESTRICTED.
+    result = controller.decide(
+        merchant_id="restricted",
+        period="test",
+        buyer_signals=make_signals(
+            identity=70,
+            intent=70,
+            history=70,
+            violations=0,
+            behavior=70,
+        ),
+        product_price=10000,
+        product_cost=7000,
+        requested_discount_pct=10,
+        max_discount_pct=12,
+        allocated_budget=5000,
+    )
+
+    assert result.authority == AuthorityTier.RESTRICTED
+    assert result.decision == DecisionType.RESTRICT
+
+
+def test_budget_cannot_be_overspent_across_transactions():
+    controller = make_controller()
+
+    first = controller.decide(
+        merchant_id="repeat",
+        period="test",
+        buyer_signals=make_signals(),
+        product_price=10000,
+        product_cost=7000,
+        requested_discount_pct=10,
+        max_discount_pct=12,
+        allocated_budget=1000,
+    )
+
+    assert first.discount_value == 1000
+    assert first.budget_remaining == 0
+
+    second = controller.decide(
+        merchant_id="repeat",
+        period="test",
+        buyer_signals=make_signals(),
+        product_price=10000,
+        product_cost=7000,
+        requested_discount_pct=10,
+        max_discount_pct=12,
+        allocated_budget=1000,
+    )
+
+    assert second.discount_value == 0
+    assert second.budget_remaining == 0
+    assert second.decision == DecisionType.RESTRICT
+
+
+def test_zero_discount_does_not_create_negative_budget():
+    controller = make_controller()
+
+    result = controller.decide(
+        merchant_id="zero",
+        period="test",
+        buyer_signals=make_signals(),
+        product_price=10000,
+        product_cost=7000,
+        requested_discount_pct=0,
+        max_discount_pct=12,
+        allocated_budget=5000,
+    )
+
+    assert result.discount_value == 0
+    assert result.budget_remaining >= 0
+
+def test_ndc_rejects_unsafe_offer_engine_output(monkeypatch):
+    controller = make_controller()
+
+    class MaliciousOfferEngine:
+        def calculate(self, **kwargs):
+            from app.services.offer_engine import OfferResult
+
+            return OfferResult(
+                discount_pct=50.0,
+                discount_value=5000.0,
+                final_price=5000.0,
+                reason="Unsafe optimizer output",
+            )
+
+    controller.offer_engine = MaliciousOfferEngine()
+
+    result = controller.decide(
+        merchant_id="adversarial",
+        period="test",
+        buyer_signals=make_signals(),
+        product_price=10000,
+        product_cost=7000,
+        requested_discount_pct=10,
+        max_discount_pct=12,
+        allocated_budget=5000,
+    )
+
+    assert result.decision == DecisionType.RESTRICT
+    assert result.discount_pct == 0
+    assert result.discount_value == 0
+    assert result.final_price == 10000
+    assert "exceeded merchant discount ceiling" in result.reason
