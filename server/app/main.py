@@ -1,6 +1,8 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api.demo import router as demo_router
 from app.api.negotiation import router as negotiation_router
 from app.core.database import engine
 from app.core.redis import redis_client
@@ -12,36 +14,16 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(negotiation_router)
-
-
-@app.get("/health")
-async def health():
-    postgres_status = "ok"
-    redis_status = "ok"
-
-    try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    except Exception:
-        postgres_status = "error"
-
-    try:
-        redis_client.ping()
-    except Exception:
-        redis_status = "error"
-
-    overall_status = (
-        "ok"
-        if postgres_status == "ok" and redis_status == "ok"
-        else "degraded"
-    )
-
-    return {
-        "status": overall_status,
-        "service": "arbiter",
-        "dependencies": {
-            "postgres": postgres_status,
-            "redis": redis_status,
-        },
-    }
+app.include_router(demo_router)
