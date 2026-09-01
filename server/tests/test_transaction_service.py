@@ -34,7 +34,11 @@ def make_result(
     )
 
 
-def test_create_from_decision_approved(db_session):
+def test_create_from_decision_approved(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
     service = TransactionService(db_session)
 
     result = make_result(
@@ -42,9 +46,9 @@ def test_create_from_decision_approved(db_session):
     )
 
     transaction = service.create_from_decision(
-        buyer_id=1,
+        buyer_id=buyer.id,
         merchant_id="test-merchant",
-        product_id=1,
+        product_id=product.id,
         proposed_offer={
             "requested_discount_pct": 10,
             "product_price": 1000,
@@ -56,13 +60,16 @@ def test_create_from_decision_approved(db_session):
     assert transaction.transaction_id.startswith("txn_")
     assert transaction.decision == "approve"
     assert transaction.status == TransactionStatus.ACCEPTED.value
+
     assert transaction.final_offer["discount_pct"] == 10.0
     assert transaction.final_offer["discount_value"] == 100.0
     assert transaction.final_offer["final_price"] == 900.0
 
     audit = (
         db_session.query(AuditLog)
-        .filter(AuditLog.transaction_id == transaction.id)
+        .filter(
+            AuditLog.transaction_id == transaction.id
+        )
         .first()
     )
 
@@ -72,7 +79,11 @@ def test_create_from_decision_approved(db_session):
     assert audit.offer_snapshot["final_price"] == 900.0
 
 
-def test_create_from_decision_non_approved_is_cancelled(db_session):
+def test_create_from_decision_non_approved_is_cancelled(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
     service = TransactionService(db_session)
 
     result = make_result(
@@ -81,9 +92,9 @@ def test_create_from_decision_non_approved_is_cancelled(db_session):
     )
 
     transaction = service.create_from_decision(
-        buyer_id=1,
+        buyer_id=buyer.id,
         merchant_id="test-merchant",
-        product_id=1,
+        product_id=product.id,
         proposed_offer={
             "requested_discount_pct": 50,
             "product_price": 1000,
@@ -96,12 +107,17 @@ def test_create_from_decision_non_approved_is_cancelled(db_session):
     assert transaction.status == TransactionStatus.CANCELLED.value
 
 
-def test_valid_status_transition(db_session):
+def test_valid_status_transition(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
     transaction = Transaction(
         transaction_id="txn_transition_test",
-        buyer_id=1,
+        buyer_id=buyer.id,
         merchant_id="test-merchant",
-        product_id=1,
+        product_id=product.id,
         proposed_offer={},
         final_offer={},
         decision="approve",
@@ -125,12 +141,50 @@ def test_valid_status_transition(db_session):
     assert updated.razorpay_ref == "order_test_123"
 
 
-def test_invalid_status_transition_raises(db_session):
+def test_invalid_status_transition_raises(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
     transaction = Transaction(
         transaction_id="txn_invalid_transition_test",
-        buyer_id=1,
+        buyer_id=buyer.id,
         merchant_id="test-merchant",
-        product_id=1,
+        product_id=product.id,
+        proposed_offer={},
+        final_offer={},
+        decision="approve",
+        status=TransactionStatus.PAYMENT_PENDING.value,
+        razorpay_ref="",
+    )
+
+    db_session.add(transaction)
+    db_session.commit()
+
+    service = TransactionService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid transaction status transition",
+    ):
+        service.update_status(
+            transaction=transaction,
+            status=TransactionStatus.ACCEPTED,
+        )
+
+
+def test_get_by_transaction_id(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
+    transaction = Transaction(
+        transaction_id="txn_lookup_test",
+        buyer_id=buyer.id,
+        merchant_id="test-merchant",
+        product_id=product.id,
         proposed_offer={},
         final_offer={},
         decision="approve",
@@ -144,19 +198,94 @@ def test_invalid_status_transition_raises(db_session):
 
     service = TransactionService(db_session)
 
-    with pytest.raises(ValueError, match="Invalid transaction status transition"):
-        service.update_status(
-            transaction=transaction,
-            status=TransactionStatus.COMPLETED,
-        )
+    found = service.get_by_transaction_id(
+        "txn_lookup_test"
+    )
+
+    assert found is not None
+    assert found.id == transaction.id
 
 
-def test_get_by_transaction_id(db_session):
+def test_get_by_transaction_id_missing(db_session):
+    service = TransactionService(db_session)
+
+    found = service.get_by_transaction_id(
+        "txn_does_not_exist"
+    )
+
+    assert found is None
+
+
+def test_status_transition_creates_audit_log(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
     transaction = Transaction(
-        transaction_id="txn_lookup_test",
-        buyer_id=1,
+        transaction_id="txn_audit_transition_test",
+        buyer_id=buyer.id,
         merchant_id="test-merchant",
-        product_id=1,
+        product_id=product.id,
+        proposed_offer={},
+        final_offer={
+            "discount_pct": 10.0,
+            "discount_value": 100.0,
+            "final_price": 900.0,
+        },
+        decision="approve",
+        status=TransactionStatus.PAYMENT_PENDING.value,
+        razorpay_ref="",
+    )
+
+    db_session.add(transaction)
+    db_session.commit()
+    db_session.refresh(transaction)
+
+    service = TransactionService(db_session)
+
+    service.update_status(
+        transaction=transaction,
+        status=TransactionStatus.PAYMENT_CREATED,
+        razorpay_ref="order_test_123",
+    )
+
+    audits = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.transaction_id == transaction.id
+        )
+        .all()
+    )
+
+    assert len(audits) == 1
+
+    audit = audits[0]
+
+    assert audit.bounds_snapshot["previous_status"] == (
+        TransactionStatus.PAYMENT_PENDING.value
+    )
+    assert audit.bounds_snapshot["new_status"] == (
+        TransactionStatus.PAYMENT_CREATED.value
+    )
+
+    assert audit.offer_snapshot["final_price"] == 900.0
+
+    assert "payment_pending" in audit.reasoning_text
+    assert "payment_created" in audit.reasoning_text
+
+
+def test_invalid_transition_does_not_create_audit_log(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
+    transaction = Transaction(
+        transaction_id="txn_invalid_audit_test",
+        buyer_id=buyer.id,
+        merchant_id="test-merchant",
+        product_id=product.id,
         proposed_offer={},
         final_offer={},
         decision="approve",
@@ -166,19 +295,196 @@ def test_get_by_transaction_id(db_session):
 
     db_session.add(transaction)
     db_session.commit()
+    db_session.refresh(transaction)
 
     service = TransactionService(db_session)
 
-    found = service.get_by_transaction_id("txn_lookup_test")
+    with pytest.raises(
+        ValueError,
+        match="Invalid transaction status transition",
+    ):
+        service.update_status(
+            transaction=transaction,
+            status=TransactionStatus.COMPLETED,
+        )
 
-    assert found is not None
-    assert found.id == transaction.id
+    audits = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.transaction_id == transaction.id
+        )
+        .all()
+    )
+
+    assert audits == []
 
 
-def test_get_by_transaction_id_missing(db_session):
+def test_mark_completed_from_payment_authorized(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
+    transaction = Transaction(
+        transaction_id="txn_complete_test",
+        buyer_id=buyer.id,
+        merchant_id="test-merchant",
+        product_id=product.id,
+        proposed_offer={},
+        final_offer={
+            "discount_pct": 10.0,
+            "discount_value": 100.0,
+            "final_price": 900.0,
+        },
+        decision="approve",
+        status=TransactionStatus.PAYMENT_AUTHORIZED.value,
+        razorpay_ref="pay_test_123",
+    )
+
+    db_session.add(transaction)
+    db_session.commit()
+    db_session.refresh(transaction)
+
     service = TransactionService(db_session)
 
-    found = service.get_by_transaction_id("txn_does_not_exist")
+    completed = service.mark_completed(
+        transaction=transaction,
+    )
+
+    assert completed.status == TransactionStatus.COMPLETED.value
 
 
-    assert found is None
+def test_mark_completed_creates_audit_log(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
+    transaction = Transaction(
+        transaction_id="txn_complete_audit_test",
+        buyer_id=buyer.id,
+        merchant_id="test-merchant",
+        product_id=product.id,
+        proposed_offer={},
+        final_offer={
+            "discount_pct": 10.0,
+            "discount_value": 100.0,
+            "final_price": 900.0,
+        },
+        decision="approve",
+        status=TransactionStatus.PAYMENT_AUTHORIZED.value,
+        razorpay_ref="pay_test_123",
+    )
+
+    db_session.add(transaction)
+    db_session.commit()
+    db_session.refresh(transaction)
+
+    service = TransactionService(db_session)
+
+    service.mark_completed(
+        transaction=transaction,
+    )
+
+    audit = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.transaction_id == transaction.id
+        )
+        .first()
+    )
+
+    assert audit is not None
+
+    assert (
+        audit.bounds_snapshot["previous_status"]
+        == TransactionStatus.PAYMENT_AUTHORIZED.value
+    )
+    assert (
+        audit.bounds_snapshot["new_status"]
+        == TransactionStatus.COMPLETED.value
+    )
+
+    assert audit.offer_snapshot["final_price"] == 900.0
+    assert audit.offer_snapshot["discount_pct"] == 10.0
+    assert audit.offer_snapshot["discount_value"] == 100.0
+
+    assert "payment_authorized" in audit.reasoning_text
+    assert "completed" in audit.reasoning_text
+
+
+def test_completed_transaction_cannot_be_completed_again(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
+    transaction = Transaction(
+        transaction_id="txn_double_complete_test",
+        buyer_id=buyer.id,
+        merchant_id="test-merchant",
+        product_id=product.id,
+        proposed_offer={},
+        final_offer={},
+        decision="approve",
+        status=TransactionStatus.COMPLETED.value,
+        razorpay_ref="pay_test_123",
+    )
+
+    db_session.add(transaction)
+    db_session.commit()
+    db_session.refresh(transaction)
+
+    service = TransactionService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid transaction status transition",
+    ):
+        service.mark_completed(
+            transaction=transaction,
+        )
+
+
+def test_completed_transaction_cannot_be_cancelled(
+    db_session,
+    transaction_dependencies,
+):
+    buyer, product = transaction_dependencies
+
+    transaction = Transaction(
+        transaction_id="txn_completed_cancel_test",
+        buyer_id=buyer.id,
+        merchant_id="test-merchant",
+        product_id=product.id,
+        proposed_offer={},
+        final_offer={},
+        decision="approve",
+        status=TransactionStatus.COMPLETED.value,
+        razorpay_ref="pay_test_123",
+    )
+
+    db_session.add(transaction)
+    db_session.commit()
+    db_session.refresh(transaction)
+
+    service = TransactionService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid transaction status transition",
+    ):
+        service.update_status(
+            transaction=transaction,
+            status=TransactionStatus.CANCELLED,
+        )
+
+    audits = (
+        db_session.query(AuditLog)
+        .filter(
+            AuditLog.transaction_id == transaction.id
+        )
+        .all()
+    )
+
+    assert audits == []

@@ -60,10 +60,14 @@ class NegotiationPersistence:
             buyer_id=buyer.id,
             session_id=session_id,
             score=result.trust_score,
-            sub_scores=result.authority and {
+            sub_scores={
+                "identity": signals.identity_confidence,
+                "intent": signals.intent_confidence,
+                "history": signals.history_score,
+                "violations": signals.violation_count,
+                "behavior": signals.behavior_score,
                 "authority": result.authority.value,
-                "trust_score": result.trust_score,
-            } or {},
+            },
         )
         self.db.add(trust_record)
 

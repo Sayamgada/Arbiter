@@ -120,3 +120,74 @@ def test_payment_verify_success():
         status=TransactionStatus.PAYMENT_AUTHORIZED,
         razorpay_ref="pay_123",
     )
+
+def test_payment_verify_failed_transaction_cannot_be_retried():
+    transaction = MagicMock()
+    transaction.status = TransactionStatus.PAYMENT_FAILED.value
+
+    with patch(
+        "app.api.negotiation.TransactionService.get_by_transaction_id",
+        return_value=transaction,
+    ):
+        response = client.post(
+            "/api/v1/payment/verify",
+            json={
+                "transaction_id": "txn_failed",
+                "razorpay_order_id": "order_123",
+                "razorpay_payment_id": "pay_123",
+                "razorpay_signature": "signature",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "payment_created" in response.json()["detail"]
+
+
+def test_payment_verify_authorized_transaction_cannot_be_replayed():
+    transaction = MagicMock()
+    transaction.status = (
+        TransactionStatus.PAYMENT_AUTHORIZED.value
+    )
+
+    with patch(
+        "app.api.negotiation.TransactionService.get_by_transaction_id",
+        return_value=transaction,
+    ):
+        response = client.post(
+            "/api/v1/payment/verify",
+            json={
+                "transaction_id": "txn_authorized",
+                "razorpay_order_id": "order_123",
+                "razorpay_payment_id": "pay_123",
+                "razorpay_signature": "signature",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "payment_created" in response.json()["detail"]
+
+
+def test_payment_verify_does_not_call_razorpay_for_wrong_order():
+    transaction = MagicMock()
+    transaction.status = TransactionStatus.PAYMENT_CREATED.value
+    transaction.razorpay_ref = "order_expected"
+
+    with patch(
+        "app.api.negotiation.TransactionService.get_by_transaction_id",
+        return_value=transaction,
+    ), patch(
+        "app.api.negotiation.PaymentService.verify_payment",
+    ) as verify_payment:
+
+        response = client.post(
+            "/api/v1/payment/verify",
+            json={
+                "transaction_id": "txn_test",
+                "razorpay_order_id": "order_wrong",
+                "razorpay_payment_id": "pay_123",
+                "razorpay_signature": "signature",
+            },
+        )
+
+    assert response.status_code == 400
+    verify_payment.assert_not_called()

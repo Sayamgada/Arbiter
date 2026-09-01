@@ -81,12 +81,14 @@ class TransactionService:
         """
         Update the lifecycle state of a transaction.
 
-        This is intentionally centralized so payment integrations
-        cannot mutate transaction state arbitrarily.
+        Every valid lifecycle transition creates an append-only
+        audit record describing the state change.
         """
 
+        previous_status = transaction.status
+
         self._validate_transition(
-            current=transaction.status,
+            current=previous_status,
             target=status.value,
         )
 
@@ -94,6 +96,12 @@ class TransactionService:
 
         if razorpay_ref is not None:
             transaction.razorpay_ref = razorpay_ref
+
+        self._create_lifecycle_audit_log(
+            transaction=transaction,
+            previous_status=previous_status,
+            new_status=status.value,
+        )
 
         self.db.commit()
         self.db.refresh(transaction)
@@ -142,6 +150,48 @@ class TransactionService:
             },
             decision=result.decision.value,
             reasoning_text=result.reason,
+        )
+
+        self.db.add(audit)
+
+    def _create_lifecycle_audit_log(
+        self,
+        *,
+        transaction: Transaction,
+        previous_status: str,
+        new_status: str,
+    ) -> None:
+        """
+        Append an audit record for a transaction lifecycle change.
+
+        Lifecycle events intentionally use the existing AuditLog
+        structure so the dashboard has one source of truth.
+        """
+
+        audit = AuditLog(
+            transaction_id=transaction.id,
+            trust_snapshot={},
+            bounds_snapshot={
+                "previous_status": previous_status,
+                "new_status": new_status,
+            },
+            budget_snapshot={},
+            offer_snapshot={
+                "final_price": transaction.final_offer.get(
+                    "final_price"
+                ),
+                "discount_pct": transaction.final_offer.get(
+                    "discount_pct"
+                ),
+                "discount_value": transaction.final_offer.get(
+                    "discount_value"
+                ),
+            },
+            decision=transaction.decision,
+            reasoning_text=(
+                f"Transaction status changed from "
+                f"{previous_status} to {new_status}."
+            ),
         )
 
         self.db.add(audit)
@@ -196,4 +246,17 @@ class TransactionService:
         return self.update_status(
             transaction=transaction,
             status=TransactionStatus.PAYMENT_PENDING,
-    )
+        )
+
+    def mark_completed(
+        self,
+        *,
+        transaction: Transaction,
+    ) -> Transaction:
+        """
+        Mark an authorized payment as completed.
+        """
+        return self.update_status(
+            transaction=transaction,
+            status=TransactionStatus.COMPLETED,
+        )
