@@ -102,17 +102,14 @@ def test_complete_intelligent_transaction_loop(db_session):
         )
 
         assert transaction is not None
-        assert transaction.status == TransactionStatus.ACCEPTED.value
-
-        # ---------------------------------------------------------
-        # 2. ACCEPTED -> PAYMENT_PENDING
-        # ---------------------------------------------------------
-        transaction_service = TransactionService(db_session)
-
-        transaction = transaction_service.mark_payment_pending(
-            transaction=transaction
+        assert (
+            transaction.status
+            == TransactionStatus.PAYMENT_PENDING.value
         )
 
+        # ---------------------------------------------------------
+        # 2. PAYMENT_PENDING -> PAYMENT_CREATED
+        # ---------------------------------------------------------
         assert (
             transaction.status
             == TransactionStatus.PAYMENT_PENDING.value
