@@ -96,8 +96,8 @@ def decide(
         requested_discount_pct=request.requested_discount_pct,
         max_discount_pct=merchant_policy.max_discount_pct,
         allocated_budget=merchant_policy.daily_budget,
+        reserve_budget=False,
     )
-
     transaction = TransactionService(
         db
     ).create_from_decision(

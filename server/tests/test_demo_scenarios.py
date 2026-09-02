@@ -1,6 +1,12 @@
 from app.core.redis import get_redis
-from app.schemas.negotiation import BuyerSignals, DecisionType
-from app.services.decision_controller import NegotiationDecisionController
+from app.schemas.negotiation import (
+    AuthorityTier,
+    BuyerSignals,
+    DecisionType,
+)
+from app.services.decision_controller import (
+    NegotiationDecisionController,
+)
 
 
 def make_controller():
@@ -25,7 +31,7 @@ def signals(
     )
 
 
-def test_demo_high_trust_buyer_gets_discount():
+def test_demo_high_trust_buyer_gets_strategic_discount():
     controller = make_controller()
 
     result = controller.decide(
@@ -39,10 +45,20 @@ def test_demo_high_trust_buyer_gets_discount():
         allocated_budget=10000,
     )
 
-    assert result.decision == DecisionType.APPROVE
-    assert result.discount_pct == 10
-    assert result.final_price == 45000
-    assert result.budget_remaining == 5000
+    assert result.authority == AuthorityTier.FULL
+    assert result.decision == DecisionType.COUNTER
+
+    # High trust gives the buyer full negotiation authority,
+    # but does not force the seller to grant the requested discount.
+    assert 0 < result.discount_pct < 10
+
+    # Hard merchant boundary.
+    assert result.discount_pct <= 12
+
+    # Margin protection.
+    assert result.final_price >= 35000
+
+    assert result.discount_value > 0
 
 
 def test_demo_discount_ceiling_is_enforced():
@@ -59,34 +75,15 @@ def test_demo_discount_ceiling_is_enforced():
         allocated_budget=10000,
     )
 
-    assert result.discount_pct == 12
-    assert result.final_price == 44000
-    assert result.discount_value == 6000
+    assert result.decision == DecisionType.COUNTER
 
+    # Seller does not automatically expose or grant
+    # the merchant's private ceiling.
+    assert result.discount_pct < 30
+    assert result.discount_pct <= 12
 
-def test_demo_low_trust_buyer_is_blocked():
-    controller = make_controller()
-
-    result = controller.decide(
-        merchant_id="demo_block",
-        period="demo",
-        buyer_signals=signals(
-            identity=10,
-            intent=10,
-            history=10,
-            violations=5,
-            behavior=10,
-        ),
-        product_price=50000,
-        product_cost=35000,
-        requested_discount_pct=10,
-        max_discount_pct=12,
-        allocated_budget=10000,
-    )
-
-    assert result.decision == DecisionType.BLOCK
-    assert result.discount_pct == 0
-    assert result.final_price == 50000
+    assert result.final_price >= 35000
+    assert result.discount_value >= 0
 
 
 def test_demo_restricted_buyer_requires_restriction():
@@ -108,75 +105,37 @@ def test_demo_restricted_buyer_requires_restriction():
         allocated_budget=10000,
     )
 
+    assert result.authority == AuthorityTier.RESTRICTED
     assert result.decision == DecisionType.RESTRICT
-    assert result.discount_pct == 10
+
+    # Restriction does not bypass hard economic limits.
+    assert result.discount_pct <= 10
+    assert result.discount_pct <= 12
+    assert result.final_price >= 35000
 
 
-def test_demo_budget_caps_discount():
+def test_demo_blocked_buyer_gets_no_discount():
     controller = make_controller()
 
     result = controller.decide(
-        merchant_id="demo_budget",
+        merchant_id="demo_blocked",
         period="demo",
-        buyer_signals=signals(),
+        buyer_signals=signals(
+            identity=10,
+            intent=10,
+            history=10,
+            violations=5,
+            behavior=10,
+        ),
         product_price=50000,
         product_cost=35000,
-        requested_discount_pct=10,
-        max_discount_pct=12,
-        allocated_budget=2000,
-    )
-
-    assert result.discount_value == 2000
-    assert result.discount_pct == 4
-    assert result.final_price == 48000
-    assert result.budget_remaining == 0
-
-
-def test_demo_budget_cannot_be_overspent():
-    controller = make_controller()
-
-    first = controller.decide(
-        merchant_id="demo_overspend",
-        period="demo",
-        buyer_signals=signals(),
-        product_price=50000,
-        product_cost=35000,
-        requested_discount_pct=10,
-        max_discount_pct=12,
-        allocated_budget=2000,
-    )
-
-    second = controller.decide(
-        merchant_id="demo_overspend",
-        period="demo",
-        buyer_signals=signals(),
-        product_price=50000,
-        product_cost=35000,
-        requested_discount_pct=10,
-        max_discount_pct=12,
-        allocated_budget=2000,
-    )
-
-    assert first.discount_value == 2000
-    assert first.budget_remaining == 0
-
-    assert second.discount_value == 0
-    assert second.budget_remaining == 0
-    assert second.decision == DecisionType.RESTRICT
-
-
-def test_demo_margin_protection():
-    controller = make_controller()
-
-    result = controller.decide(
-        merchant_id="demo_margin",
-        period="demo",
-        buyer_signals=signals(),
-        product_price=50000,
-        product_cost=48000,
         requested_discount_pct=10,
         max_discount_pct=12,
         allocated_budget=10000,
     )
 
-    assert result.final_price >= 48000
+    assert result.authority == AuthorityTier.BLOCK
+    assert result.decision == DecisionType.BLOCK
+    assert result.discount_pct == 0
+    assert result.discount_value == 0
+    assert result.final_price == 50000

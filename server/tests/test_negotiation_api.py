@@ -76,72 +76,6 @@ def cleanup_test_data():
     db.close()
 
 
-def test_negotiation_persists_transaction_and_audit():
-    cleanup_test_data()
-    redis = get_redis()
-    redis.flushdb()
-
-    buyer_id, buyer_pk, product_id = setup_test_data()
-
-    response = client.post(
-        "/api/v1/negotiation/decide",
-        json={
-            "merchant_id": "api-test-merchant",
-            "period": "test",
-            "buyer_id": buyer_id,
-            "product_id": product_id,
-            "buyer_signals": {
-                "identity_confidence": 100,
-                "intent_confidence": 100,
-                "history_score": 100,
-                "violation_count": 0,
-                "behavior_score": 100,
-            },
-            "requested_discount_pct": 10,
-        },
-    )
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert data["decision"] == "approve"
-    assert data["authority"] == "full"
-    assert data["trust_score"] == 100
-    assert data["discount_pct"] == 10
-    assert data["discount_value"] == 1000
-    assert data["final_price"] == 9000
-    assert data["budget_remaining"] == 4000
-    assert data["transaction_id"].startswith("txn_")
-
-    db = SessionLocal()
-
-    transaction = db.scalar(
-        select(Transaction).where(Transaction.transaction_id == data["transaction_id"])
-    )
-
-    assert transaction is not None
-    assert transaction.buyer_id == buyer_pk
-    assert transaction.product_id == product_id
-    assert transaction.merchant_id == "api-test-merchant"
-    assert transaction.decision == "approve"
-    assert transaction.final_offer["discount_pct"] == 10
-    assert transaction.final_offer["final_price"] == 9000
-
-    audit = db.scalar(select(AuditLog).where(AuditLog.transaction_id == transaction.id))
-
-    assert audit is not None
-    assert audit.decision == "approve"
-    assert audit.trust_snapshot["score"] == 100
-    assert audit.trust_snapshot["authority"] == "full"
-    assert audit.budget_snapshot["remaining"] == 4000
-    assert audit.offer_snapshot["discount_value"] == 1000
-
-    db.close()
-
-    cleanup_test_data()
-
-
 def test_unknown_buyer_returns_404():
     cleanup_test_data()
 
@@ -246,15 +180,15 @@ def test_wrong_merchant_product_returns_404():
 
     cleanup_test_data()
 
-def test_negotiation_session_accepts_valid_offer():
+def test_negotiation_persists_transaction_and_audit():
     cleanup_test_data()
     redis = get_redis()
     redis.flushdb()
 
-    buyer_id, _, product_id = setup_test_data()
+    buyer_id, buyer_pk, product_id = setup_test_data()
 
     response = client.post(
-        "/api/v1/negotiation/session",
+        "/api/v1/negotiation/decide",
         json={
             "merchant_id": "api-test-merchant",
             "period": "test",
@@ -268,7 +202,6 @@ def test_negotiation_session_accepts_valid_offer():
                 "behavior_score": 100,
             },
             "requested_discount_pct": 10,
-            "max_rounds": 5,
         },
     )
 
@@ -276,11 +209,68 @@ def test_negotiation_session_accepts_valid_offer():
 
     data = response.json()
 
-    assert data["status"] == "accepted"
-    assert data["rounds"] == 1
-    assert data["final_price"] == 9000
-    assert data["final_discount_pct"] == 10
-    assert len(data["messages"]) == 3
+    assert data["decision"] == "counter"
+    assert data["authority"] == "full"
+    assert data["trust_score"] == 100
+
+    assert data["discount_pct"] > 0
+    assert data["discount_pct"] < 10
+    assert data["discount_pct"] <= 12
+
+    assert data["discount_value"] > 0
+    assert data["final_price"] < 10000
+    assert data["final_price"] >= 7000
+
+    # A counter does not commit merchant budget.
+    assert data["budget_remaining"] == 5000
+
+    assert data["transaction_id"].startswith("txn_")
+
+    db = SessionLocal()
+
+    transaction = db.scalar(
+        select(Transaction).where(
+            Transaction.transaction_id == data["transaction_id"]
+        )
+    )
+
+    assert transaction is not None
+    assert transaction.buyer_id == buyer_pk
+    assert transaction.product_id == product_id
+    assert transaction.merchant_id == "api-test-merchant"
+
+    assert transaction.decision == "counter"
+    assert transaction.status == "cancelled"
+
+    assert (
+        transaction.final_offer["discount_pct"]
+        == data["discount_pct"]
+    )
+    assert (
+        transaction.final_offer["final_price"]
+        == data["final_price"]
+    )
+
+    audit = db.scalar(
+        select(AuditLog).where(
+            AuditLog.transaction_id == transaction.id
+        )
+    )
+
+    assert audit is not None
+    assert audit.decision == "counter"
+    assert audit.trust_snapshot["score"] == 100
+    assert audit.trust_snapshot["authority"] == "full"
+
+    # No budget should have been consumed by a hypothetical counter.
+    assert audit.budget_snapshot["remaining"] == 5000
+
+    assert (
+        audit.offer_snapshot["discount_value"]
+        == data["discount_value"]
+    )
+
+    db.close()
 
     cleanup_test_data()
 

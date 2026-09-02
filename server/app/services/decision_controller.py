@@ -58,6 +58,9 @@ class NegotiationDecisionController:
         max_discount_pct: float,
         allocated_budget: float,
         reserve_budget: bool = True,
+        round_number: int = 1,
+        previous_discount_pct: float | None = None,
+        inventory: int | None = None,
     ) -> NDCResult:
 
         # ---------------------------------------------------------
@@ -79,7 +82,6 @@ class NegotiationDecisionController:
                 ),
                 reason="Buyer trust score is below the minimum threshold",
             )
-
         # ---------------------------------------------------------
         # 2. BOUNDS
         # ---------------------------------------------------------
@@ -139,8 +141,10 @@ class NegotiationDecisionController:
             requested_discount_pct=requested_discount_pct,
             max_discount_pct=bounds.max_discount_pct,
             remaining_budget=remaining_budget,
+            round_number=round_number,
+            previous_discount_pct=previous_discount_pct,
+            inventory=inventory,
         )
-
         # ---------------------------------------------------------
         # 5. FINAL SAFETY VALIDATION
         # ---------------------------------------------------------
@@ -173,8 +177,10 @@ class NegotiationDecisionController:
         # ---------------------------------------------------------
         if trust.authority == AuthorityTier.RESTRICTED:
             decision = DecisionType.RESTRICT
-        elif offer.discount_pct > 0:
+
+        elif offer.discount_pct >= requested_discount_pct:
             decision = DecisionType.APPROVE
+
         else:
             decision = DecisionType.COUNTER
 
@@ -232,4 +238,168 @@ class NegotiationDecisionController:
             merchant_id=merchant_id,
             period=period,
             discount_value=discount_value,
+        )
+
+    def authorize_accepted_offer(
+        self,
+        *,
+        merchant_id: str,
+        period: str,
+        buyer_signals: BuyerSignals,
+        product_price: float,
+        product_cost: float,
+        discount_pct: float,
+        max_discount_pct: float,
+        allocated_budget: float,
+    ) -> NDCResult:
+        """
+        Final authorization for a seller offer accepted by the buyer.
+
+        Negotiation may have produced a COUNTER decision. Once the buyer
+        accepts that exact seller offer, this method performs the final
+        deterministic authorization and budget commitment.
+
+        The NDC remains the only component allowed to authorize the
+        transaction for payment.
+        """
+
+        trust = self.trust_engine.score(buyer_signals)
+
+        if trust.authority == AuthorityTier.BLOCK:
+            return NDCResult(
+                decision=DecisionType.BLOCK,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=self.budget_manager.remaining(
+                    merchant_id=merchant_id,
+                    period=period,
+                ),
+                reason="Buyer trust score is below the minimum threshold",
+            )
+
+        bounds = self.bounds_engine.evaluate(
+            requested_discount_pct=discount_pct,
+            max_discount_pct=max_discount_pct,
+            violation_count=buyer_signals.violation_count,
+        )
+
+        if bounds.blocked:
+            return NDCResult(
+                decision=DecisionType.BLOCK,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=self.budget_manager.remaining(
+                    merchant_id=merchant_id,
+                    period=period,
+                ),
+                reason=bounds.reason,
+            )
+
+        if not bounds.allowed:
+            return NDCResult(
+                decision=DecisionType.RESTRICT,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=self.budget_manager.remaining(
+                    merchant_id=merchant_id,
+                    period=period,
+                ),
+                reason=(
+                    "Accepted offer is outside merchant policy bounds"
+                ),
+            )
+
+        self.budget_manager.initialize(
+            merchant_id=merchant_id,
+            period=period,
+            allocated=allocated_budget,
+        )
+
+        remaining_budget = self.budget_manager.remaining(
+            merchant_id=merchant_id,
+            period=period,
+        )
+
+        discount_value = round(
+            product_price * discount_pct / 100,
+            2,
+        )
+
+        final_price = round(
+            product_price - discount_value,
+            2,
+        )
+
+        if final_price < product_cost:
+            return NDCResult(
+                decision=DecisionType.RESTRICT,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=remaining_budget,
+                reason="Accepted offer would fall below product cost",
+            )
+
+        if discount_value > remaining_budget:
+            return NDCResult(
+                decision=DecisionType.RESTRICT,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=remaining_budget,
+                reason="Insufficient autonomy budget for accepted offer",
+            )
+
+        if trust.authority == AuthorityTier.RESTRICTED:
+            return NDCResult(
+                decision=DecisionType.RESTRICT,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=remaining_budget,
+                reason="Buyer authority level does not permit autonomous approval",
+            )
+
+        reservation = self.budget_manager.reserve(
+            merchant_id=merchant_id,
+            period=period,
+            discount_value=discount_value,
+        )
+
+        if not reservation.allowed:
+            return NDCResult(
+                decision=DecisionType.RESTRICT,
+                authority=trust.authority,
+                trust_score=trust.score,
+                discount_pct=0.0,
+                discount_value=0.0,
+                final_price=product_price,
+                budget_remaining=reservation.remaining,
+                reason=reservation.reason,
+            )
+
+        return NDCResult(
+            decision=DecisionType.APPROVE,
+            authority=trust.authority,
+            trust_score=trust.score,
+            discount_pct=discount_pct,
+            discount_value=discount_value,
+            final_price=final_price,
+            budget_remaining=reservation.remaining,
+            reason="Buyer accepted the authorized seller offer",
         )

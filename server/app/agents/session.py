@@ -6,6 +6,7 @@ from app.agents.protocol import (
 )
 from app.agents.seller_agent import SellerGrowthAgent
 from app.schemas.negotiation import (
+    DecisionType,
     NegotiationSessionResult,
     NegotiationStatus,
 )
@@ -190,22 +191,18 @@ class NegotiationSession:
 
         return self._process_buyer_request(request)
 
+    
     def _complete_transaction(
         self,
         seller_response: AgentResponse,
     ) -> NegotiationSessionResult:
-        discount_value = round(
-            self.product_price
-            * seller_response.discount_pct
-            / 100,
-            2,
+        authorization = self.seller.authorize_accepted_offer(
+            product_price=self.product_price,
+            product_cost=self.product_cost,
+            discount_pct=seller_response.discount_pct,
         )
 
-        reservation = self.seller.commit_accepted_offer(
-            discount_value=discount_value,
-        )
-
-        if not reservation.allowed:
+        if authorization.decision != DecisionType.APPROVE:
             self.status = NegotiationStatus.REJECTED
 
             return NegotiationSessionResult(
@@ -215,24 +212,28 @@ class NegotiationSession:
                 final_price=None,
                 final_discount_pct=None,
                 message=(
-                    "The offer was authorized, but the "
-                    "autonomy budget could not be committed."
+                    "The buyer accepted the offer, but final "
+                    "transaction authorization was not granted."
                 ),
                 messages=self.messages,
             )
 
         self.status = NegotiationStatus.ACCEPTED
 
-        self.authorized_discount_value = discount_value
+        self.authorized_discount_value = (
+            authorization.discount_value
+        )
+        self.authorized_price = authorization.final_price
+        self.authorized_discount_pct = authorization.discount_pct
 
         return NegotiationSessionResult(
             session_id=seller_response.session_id,
             status=self.status,
             rounds=self.round_number,
-            final_price=seller_response.price,
-            final_discount_pct=seller_response.discount_pct,
+            final_price=authorization.final_price,
+            final_discount_pct=authorization.discount_pct,
             message=(
-                "Negotiation accepted and budget committed."
+                "Negotiation accepted and transaction authorized."
             ),
             messages=self.messages,
         )

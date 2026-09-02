@@ -74,9 +74,23 @@ def test_successful_negotiation():
     result = session.start()
 
     assert result.status == NegotiationStatus.ACCEPTED
-    assert result.final_price == 9000
-    assert result.final_discount_pct == 10
-    assert result.rounds == 1
+
+    # The buyer requested 10%, but the seller is not required
+    # to immediately concede the full request.
+    assert result.final_discount_pct is not None
+    assert 0 < result.final_discount_pct < 10
+
+    # The cooperative buyer accepts at 70% of its target:
+    # 10% * 0.70 = 7%.
+    assert result.final_discount_pct >= 7
+
+    assert result.final_price is not None
+    assert result.final_price < 10000
+    assert result.final_price >= 7000
+
+    # Strategic negotiation should take multiple rounds.
+    assert result.rounds > 1
+    assert result.rounds <= 5
 
 
 def test_hard_ceiling_controls_negotiation():
@@ -87,6 +101,9 @@ def test_hard_ceiling_controls_negotiation():
 
     result = session.start()
 
+    # The buyer's 20% request is above the seller's private
+    # 12% ceiling. The seller may counter, but can never
+    # authorize more than the ceiling.
     assert result.status == NegotiationStatus.EXPIRED
     assert result.final_price is None
     assert result.final_discount_pct is None
@@ -108,6 +125,7 @@ def test_low_trust_buyer_is_blocked():
 
     assert result.status == NegotiationStatus.BLOCKED
     assert result.final_price is None
+    assert result.final_discount_pct is None
 
 
 def test_budget_is_committed_only_after_acceptance():
@@ -119,13 +137,18 @@ def test_budget_is_committed_only_after_acceptance():
     result = session.start()
 
     assert result.status == NegotiationStatus.ACCEPTED
+    assert result.final_discount_pct is not None
 
     remaining = session.seller.controller.budget_manager.remaining(
         merchant_id="merchant-1",
         period="test",
     )
 
-    assert remaining == 4000
+    expected_discount_value = (
+        10000 * result.final_discount_pct / 100
+    )
+
+    assert remaining == 5000 - expected_discount_value
 
 
 def test_multiple_rounds_can_expire():

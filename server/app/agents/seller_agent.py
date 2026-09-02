@@ -18,17 +18,22 @@ class SellerGrowthAgent:
     """
     Merchant-side negotiation agent.
 
-    The Seller Growth Agent does not have independent
-    authorization authority.
+    The Seller Growth Agent does not independently authorize
+    discounts.
 
-    Every proposed offer must pass through the NDC.
+    Every numerical seller offer passes through the deterministic
+    Negotiation Decision Controller.
 
-    The LLM is used only to generate natural-language
-    negotiation responses. It never determines:
-    - discount authorization
-    - budget usage
+    The agent remembers its previous concession so that negotiation
+    can progress rationally across rounds.
+
+    The LLM only generates language. It cannot change:
+    - price
+    - discount
     - trust
-    - transaction approval
+    - budget
+    - merchant ceiling
+    - authorization decision
     """
 
     def __init__(
@@ -50,9 +55,11 @@ class SellerGrowthAgent:
         self.allocated_budget = allocated_budget
         self.llm = llm_service
 
-        # The latest deterministic authorization result.
-        # This is the source of truth for transaction persistence.
+        # Last deterministic NDC result.
         self.last_decision_result: NDCResult | None = None
+
+        # Seller's previous negotiation position.
+        self.last_offer_discount_pct: float | None = None
 
     def evaluate_offer(
         self,
@@ -60,38 +67,65 @@ class SellerGrowthAgent:
         *,
         product_price: float,
         product_cost: float,
+        inventory: int | None = None,
     ) -> AgentResponse:
 
-        # NDC is the sole source of authorization.
+        if request.requested_discount_pct is None:
+            raise ValueError(
+                "Negotiation request must contain "
+                "requested discount"
+            )
+
         result = self.controller.decide(
             merchant_id=self.merchant_id,
             period=self.period,
             buyer_signals=self.buyer_signals,
             product_price=product_price,
             product_cost=product_cost,
-            requested_discount_pct=request.requested_discount_pct,
+            requested_discount_pct=(
+                request.requested_discount_pct
+            ),
             max_discount_pct=self.max_discount_pct,
             allocated_budget=self.allocated_budget,
             reserve_budget=False,
+            round_number=request.round_number,
+            previous_discount_pct=(
+                self.last_offer_discount_pct
+            ),
+            inventory=inventory,
         )
 
-        # Preserve the deterministic result for the transaction layer.
         self.last_decision_result = result
 
+        # ---------------------------------------------------------
+        # BLOCK
+        # ---------------------------------------------------------
         if result.decision == DecisionType.BLOCK:
             return AgentResponse(
                 session_id=request.session_id,
                 round_number=request.round_number,
                 message_type=MessageType.REJECT,
                 price=product_price,
-                discount_pct=0,
+                discount_pct=0.0,
                 message=result.reason,
             )
 
+        # ---------------------------------------------------------
+        # REMEMBER SELLER POSITION
+        # ---------------------------------------------------------
+        self.last_offer_discount_pct = (
+            result.discount_pct
+        )
+
+        # ---------------------------------------------------------
+        # MAP NDC DECISION TO MESSAGE TYPE
+        # ---------------------------------------------------------
         if result.decision == DecisionType.APPROVE:
             message_type = MessageType.FINAL
+
         elif result.decision == DecisionType.RESTRICT:
             message_type = MessageType.OFFER
+
         else:
             message_type = MessageType.COUNTER_OFFER
 
@@ -113,22 +147,32 @@ class SellerGrowthAgent:
             ),
             message=message,
         )
-
-    def commit_accepted_offer(
+    def authorize_accepted_offer(
         self,
         *,
-        discount_value: float,
-    ):
+        product_price: float,
+        product_cost: float,
+        discount_pct: float,
+    ) -> NDCResult:
         """
-        Commit the authorized discount after the buyer
-        accepts the offer.
+        Perform final NDC authorization after the buyer accepts
+        the seller's negotiated offer.
         """
-        return self.controller.commit_offer(
+
+        result = self.controller.authorize_accepted_offer(
             merchant_id=self.merchant_id,
             period=self.period,
-            discount_value=discount_value,
+            buyer_signals=self.buyer_signals,
+            product_price=product_price,
+            product_cost=product_cost,
+            discount_pct=discount_pct,
+            max_discount_pct=self.max_discount_pct,
+            allocated_budget=self.allocated_budget,
         )
 
+        self.last_decision_result = result
+
+        return result
     def _build_message(
         self,
         *,
@@ -137,42 +181,49 @@ class SellerGrowthAgent:
         final_price: float,
         reason: str,
     ) -> str:
-        """
-        Generate natural-language seller communication.
 
-        All numerical values come from the deterministic NDC result.
-        The LLM cannot change them.
-        """
+        fallback = self._fallback_message(
+            decision=decision,
+            discount_pct=discount_pct,
+            final_price=final_price,
+            reason=reason,
+        )
 
         if self.llm is None:
-            return self._fallback_message(
-                decision=decision,
-                discount_pct=discount_pct,
-                final_price=final_price,
-                reason=reason,
+            return fallback
+
+        try:
+            response = self.llm.generate(
+                system_prompt=(
+                    "You are the seller-side commerce agent "
+                    "for Arbiter. "
+                    "Generate concise and professional "
+                    "negotiation language. "
+                    "The deterministic transaction controller "
+                    "has already authorized the numerical offer. "
+                    "You MUST preserve the supplied price and "
+                    "discount exactly. "
+                    "You MUST NOT invent, change, or negotiate "
+                    "numerical values."
+                ),
+                user_prompt=(
+                    f"Decision: {decision.value}\n"
+                    f"Authorized discount: "
+                    f"{discount_pct:.2f}%\n"
+                    f"Authorized final price: "
+                    f"₹{final_price:.2f}\n"
+                    f"Controller reasoning: {reason}\n\n"
+                    "Write one short seller response."
+                ),
             )
 
-        return self.llm.generate(
-            system_prompt=(
-                "You are the seller-side commerce agent for Arbiter. "
-                "Generate concise, professional negotiation language. "
-                "You MUST preserve the supplied price and discount exactly. "
-                "You MUST NOT invent, change, or negotiate numerical values. "
-                "The authorization decision has already been made by "
-                "the deterministic transaction controller."
-            ),
-            user_prompt=(
-                "Decision: "
-                f"{decision.value}\n"
-                "Authorized discount: "
-                f"{discount_pct:.2f}%\n"
-                "Authorized final price: "
-                f"₹{final_price:.2f}\n"
-                "Controller reasoning: "
-                f"{reason}\n\n"
-                "Write one short seller response to the buyer."
-            ),
-        )
+            if response:
+                return response
+
+        except Exception:
+            pass
+
+        return fallback
 
     @staticmethod
     def _fallback_message(
@@ -182,15 +233,22 @@ class SellerGrowthAgent:
         final_price: float,
         reason: str,
     ) -> str:
+
         if decision == DecisionType.RESTRICT:
             return (
                 f"I can offer {discount_pct:.2f}% off, "
                 f"bringing the price to ₹{final_price:.2f}. "
-                f"Confirmation is required. {reason}."
+                "Confirmation is required."
+            )
+
+        if decision == DecisionType.COUNTER:
+            return (
+                f"I can offer {discount_pct:.2f}% off, "
+                f"bringing the price to ₹{final_price:.2f}."
             )
 
         return (
             f"I can offer {discount_pct:.2f}% off, "
             f"bringing the price to ₹{final_price:.2f}. "
-            f"{reason}."
+            "That works for me."
         )

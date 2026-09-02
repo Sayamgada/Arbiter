@@ -10,7 +10,6 @@ from app.models.merchant import MerchantPolicy
 from app.models.product import Product
 from app.models.transaction import Transaction
 from app.schemas.negotiation import TransactionStatus
-from app.services.transaction_service import TransactionService
 
 
 client = TestClient(app)
@@ -62,8 +61,13 @@ def test_complete_intelligent_transaction_loop(db_session):
 
     try:
         # ---------------------------------------------------------
-        # 1. NEGOTIATION -> NDC -> TRANSACTION
+        # 1. ONE-SHOT NEGOTIATION EVALUATION
         # ---------------------------------------------------------
+        #
+        # The buyer requests 10%. The seller strategically counters.
+        # This is only a hypothetical offer and must not enter
+        # the payment lifecycle.
+        #
         negotiation_response = client.post(
             "/api/v1/negotiation/decide",
             json={
@@ -86,12 +90,74 @@ def test_complete_intelligent_transaction_loop(db_session):
 
         negotiation = negotiation_response.json()
 
-        assert negotiation["decision"] == "approve"
-        assert negotiation["discount_pct"] == 10
-        assert negotiation["discount_value"] == 1000
-        assert negotiation["final_price"] == 9000
+        assert negotiation["decision"] == "counter"
+        assert 0 < negotiation["discount_pct"] < 10
+        assert negotiation["discount_pct"] <= 12
+        assert negotiation["final_price"] < 10000
+        assert negotiation["final_price"] >= 7000
 
-        transaction_id = negotiation["transaction_id"]
+        counter_transaction_id = negotiation["transaction_id"]
+
+        counter_transaction = (
+            db_session.query(Transaction)
+            .filter(
+                Transaction.transaction_id
+                == counter_transaction_id
+            )
+            .first()
+        )
+
+        assert counter_transaction is not None
+        assert (
+            counter_transaction.status
+            == TransactionStatus.CANCELLED.value
+        )
+
+        # The counter is hypothetical; no payment can be created
+        # from this transaction.
+
+        # ---------------------------------------------------------
+        # 2. MULTI-ROUND NEGOTIATION -> ACCEPTED
+        # ---------------------------------------------------------
+        session_response = client.post(
+            "/api/v1/negotiation/session",
+            json={
+                "merchant_id": merchant_id,
+                "period": "e2e",
+                "buyer_id": buyer_id,
+                "product_id": product.id,
+                "buyer_signals": {
+                    "identity_confidence": 100,
+                    "intent_confidence": 100,
+                    "history_score": 100,
+                    "violation_count": 0,
+                    "behavior_score": 100,
+                },
+                "requested_discount_pct": 10,
+                "max_rounds": 5,
+            },
+        )
+
+        assert session_response.status_code == 200
+
+        session = session_response.json()
+
+        assert session["status"] == "accepted"
+        assert session["transaction_id"] is not None
+        assert session["rounds"] > 1
+        assert session["rounds"] <= 5
+
+        assert session["final_discount_pct"] is not None
+        assert 0 < session["final_discount_pct"] < 10
+        assert session["final_discount_pct"] >= 7
+
+        assert session["final_price"] is not None
+        assert session["final_price"] < 10000
+        assert session["final_price"] >= 7000
+
+        assert len(session["messages"]) >= session["rounds"]
+
+        transaction_id = session["transaction_id"]
 
         transaction = (
             db_session.query(Transaction)
@@ -102,21 +168,29 @@ def test_complete_intelligent_transaction_loop(db_session):
         )
 
         assert transaction is not None
+        assert transaction.buyer_id == buyer.id
+        assert transaction.product_id == product.id
+        assert transaction.merchant_id == merchant_id
+
+        assert transaction.decision == "approve"
         assert (
             transaction.status
             == TransactionStatus.PAYMENT_PENDING.value
         )
 
-        # ---------------------------------------------------------
-        # 2. PAYMENT_PENDING -> PAYMENT_CREATED
-        # ---------------------------------------------------------
+        # The final persisted offer must match the accepted
+        # negotiation result.
         assert (
-            transaction.status
-            == TransactionStatus.PAYMENT_PENDING.value
+            transaction.final_offer["discount_pct"]
+            == session["final_discount_pct"]
+        )
+        assert (
+            transaction.final_offer["final_price"]
+            == session["final_price"]
         )
 
         # ---------------------------------------------------------
-        # 3. AUDIT TRAIL EXISTS
+        # 3. AUDIT TRAIL
         # ---------------------------------------------------------
         audit = (
             db_session.query(AuditLog)
@@ -129,17 +203,27 @@ def test_complete_intelligent_transaction_loop(db_session):
         assert audit is not None
         assert audit.decision == "approve"
         assert audit.trust_snapshot["score"] == 100
-        assert audit.offer_snapshot["discount_pct"] == 10
-        assert audit.offer_snapshot["final_price"] == 9000
+        assert audit.trust_snapshot["authority"] == "full"
+
+        assert (
+            audit.offer_snapshot["discount_pct"]
+            == session["final_discount_pct"]
+        )
+        assert (
+            audit.offer_snapshot["final_price"]
+            == session["final_price"]
+        )
 
         # ---------------------------------------------------------
         # 4. PAYMENT_PENDING -> PAYMENT_CREATED
         # ---------------------------------------------------------
+        final_price = session["final_price"]
+
         with patch(
             "app.api.negotiation.PaymentService.create_order",
             return_value={
                 "id": "order_e2e_123",
-                "amount": 900000,
+                "amount": int(final_price * 100),
                 "currency": "INR",
             },
         ):
@@ -156,7 +240,7 @@ def test_complete_intelligent_transaction_loop(db_session):
 
         assert order["transaction_id"] == transaction_id
         assert order["razorpay_order_id"] == "order_e2e_123"
-        assert order["amount"] == 9000
+        assert order["amount"] == final_price
         assert order["currency"] == "INR"
         assert (
             order["status"]
@@ -199,7 +283,10 @@ def test_complete_intelligent_transaction_loop(db_session):
         verification = verify_response.json()
 
         assert verification["transaction_id"] == transaction_id
-        assert verification["razorpay_payment_id"] == "pay_e2e_123"
+        assert (
+            verification["razorpay_payment_id"]
+            == "pay_e2e_123"
+        )
         assert (
             verification["status"]
             == TransactionStatus.PAYMENT_AUTHORIZED.value
@@ -223,9 +310,23 @@ def test_complete_intelligent_transaction_loop(db_session):
         )
         assert transaction.razorpay_ref == "pay_e2e_123"
 
-        assert transaction.final_offer["discount_pct"] == 10
-        assert transaction.final_offer["discount_value"] == 1000
-        assert transaction.final_offer["final_price"] == 9000
+        assert (
+            transaction.final_offer["discount_pct"]
+            == session["final_discount_pct"]
+        )
+        assert (
+            transaction.final_offer["discount_value"]
+            == round(
+                10000
+                * session["final_discount_pct"]
+                / 100,
+                2,
+            )
+        )
+        assert (
+            transaction.final_offer["final_price"]
+            == session["final_price"]
+        )
 
     finally:
         app.dependency_overrides.clear()
