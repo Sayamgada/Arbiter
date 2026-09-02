@@ -1,5 +1,3 @@
-from sqlalchemy import select
-
 from app.core.database import SessionLocal
 from app.models.buyer import Buyer
 from app.models.merchant import MerchantPolicy
@@ -14,13 +12,38 @@ def seed_demo() -> None:
     db = SessionLocal()
 
     try:
-        # ---------------------------------------------------------
-        # Merchant policy
-        # ---------------------------------------------------------
-        merchant = db.scalar(
-            select(MerchantPolicy).where(
-                MerchantPolicy.merchant_id == DEMO_MERCHANT_ID
+        buyer = (
+            db.query(Buyer)
+            .filter(Buyer.buyer_id == DEMO_BUYER_ID)
+            .first()
+        )
+
+        if buyer is None:
+            buyer = Buyer(
+                buyer_id=DEMO_BUYER_ID,
+                identity_confidence=100.0,
+                intent_confidence=100.0,
+                history_score=100.0,
+                violation_count=0,
+                behavior_score=100.0,
+                is_active=True,
             )
+            db.add(buyer)
+        else:
+            buyer.identity_confidence = 100.0
+            buyer.intent_confidence = 100.0
+            buyer.history_score = 100.0
+            buyer.violation_count = 0
+            buyer.behavior_score = 100.0
+            buyer.is_active = True
+
+        merchant = (
+            db.query(MerchantPolicy)
+            .filter(
+                MerchantPolicy.merchant_id
+                == DEMO_MERCHANT_ID
+            )
+            .first()
         )
 
         if merchant is None:
@@ -38,51 +61,23 @@ def seed_demo() -> None:
             merchant.trust_full_threshold = 80.0
             merchant.trust_restricted_threshold = 40.0
 
-        # ---------------------------------------------------------
-        # Buyer
-        # ---------------------------------------------------------
-        buyer = db.scalar(
-            select(Buyer).where(
-                Buyer.buyer_id == DEMO_BUYER_ID
+        product = (
+            db.query(Product)
+            .filter(
+                Product.merchant_id
+                == DEMO_MERCHANT_ID
             )
-        )
-
-        if buyer is None:
-            buyer = Buyer(
-                buyer_id=DEMO_BUYER_ID,
-                identity_confidence=95.0,
-                intent_confidence=90.0,
-                history_score=90.0,
-                violation_count=0,
-                behavior_score=95.0,
-                is_active=True,
-            )
-            db.add(buyer)
-        else:
-            buyer.identity_confidence = 95.0
-            buyer.intent_confidence = 90.0
-            buyer.history_score = 90.0
-            buyer.violation_count = 0
-            buyer.behavior_score = 95.0
-            buyer.is_active = True
-
-        # ---------------------------------------------------------
-        # Product
-        # ---------------------------------------------------------
-        product = db.scalar(
-            select(Product).where(
-                Product.merchant_id == DEMO_MERCHANT_ID,
-                Product.name == "Premium Headphones",
-            )
+            .order_by(Product.id.asc())
+            .first()
         )
 
         if product is None:
             product = Product(
                 merchant_id=DEMO_MERCHANT_ID,
-                name="Premium Headphones",
+                name="Arbiter Demo Product",
                 description=(
-                    "Wireless premium headphones for the "
-                    "Arbiter commerce demonstration."
+                    "Demo product used for trust-aware "
+                    "agentic commerce negotiation."
                 ),
                 price=10000.0,
                 cost=7000.0,
@@ -90,9 +85,10 @@ def seed_demo() -> None:
             )
             db.add(product)
         else:
+            product.name = "Arbiter Demo Product"
             product.description = (
-                "Wireless premium headphones for the "
-                "Arbiter commerce demonstration."
+                "Demo product used for trust-aware "
+                "agentic commerce negotiation."
             )
             product.price = 10000.0
             product.cost = 7000.0
@@ -100,14 +96,13 @@ def seed_demo() -> None:
 
         db.commit()
 
-        print("Arbiter demo data seeded successfully.")
-        print()
-        print(f"Merchant: {DEMO_MERCHANT_ID}")
+        print("Demo data seeded successfully.")
         print(f"Buyer:    {DEMO_BUYER_ID}")
-        print(
-            f"Product:  {product.name} "
-            f"(id={product.id})"
-        )
+        print(f"Merchant: {DEMO_MERCHANT_ID}")
+        print(f"Product:  {product.name}")
+        print(f"Price:    ₹{product.price:.2f}")
+        print(f"Cost:     ₹{product.cost:.2f}")
+        print(f"Inventory:{product.inventory}")
 
     except Exception:
         db.rollback()

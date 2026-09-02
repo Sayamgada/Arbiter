@@ -61,6 +61,7 @@ class SellerGrowthAgent:
         # Seller's previous negotiation position.
         self.last_offer_discount_pct: float | None = None
 
+
     def evaluate_offer(
         self,
         request: NegotiationMessage,
@@ -100,6 +101,7 @@ class SellerGrowthAgent:
         # ---------------------------------------------------------
         # BLOCK
         # ---------------------------------------------------------
+
         if result.decision == DecisionType.BLOCK:
             return AgentResponse(
                 session_id=request.session_id,
@@ -107,19 +109,20 @@ class SellerGrowthAgent:
                 message_type=MessageType.REJECT,
                 price=product_price,
                 discount_pct=0.0,
+                discount_value=0.0,
                 message=result.reason,
             )
 
         # ---------------------------------------------------------
         # REMEMBER SELLER POSITION
         # ---------------------------------------------------------
-        self.last_offer_discount_pct = (
-            result.discount_pct
-        )
+
+        self.last_offer_discount_pct = result.discount_pct
 
         # ---------------------------------------------------------
         # MAP NDC DECISION TO MESSAGE TYPE
         # ---------------------------------------------------------
+
         if result.decision == DecisionType.APPROVE:
             message_type = MessageType.FINAL
 
@@ -129,6 +132,10 @@ class SellerGrowthAgent:
         else:
             message_type = MessageType.COUNTER_OFFER
 
+        # ---------------------------------------------------------
+        # SELLER LANGUAGE
+        # ---------------------------------------------------------
+
         message = self._build_message(
             decision=result.decision,
             discount_pct=result.discount_pct,
@@ -136,17 +143,23 @@ class SellerGrowthAgent:
             reason=result.reason,
         )
 
+        # ---------------------------------------------------------
+        # RESPONSE
+        # ---------------------------------------------------------
+
         return AgentResponse(
             session_id=request.session_id,
             round_number=request.round_number,
             message_type=message_type,
             price=result.final_price,
             discount_pct=result.discount_pct,
+            discount_value=result.discount_value,
             requires_confirmation=(
                 result.decision == DecisionType.RESTRICT
             ),
             message=message,
         )
+        
     def authorize_accepted_offer(
         self,
         *,

@@ -31,6 +31,16 @@ export type DemoContext = {
   };
 };
 
+export type ScenarioId =
+  | "trusted-buyer"
+  | "restricted-buyer"
+  | "untrusted-buyer"
+  | "budget-constraint"
+  | "inventory-pressure"
+  | "policy-boundary"
+  | "multi-round"
+  | "final-authorization";
+
 export type NegotiationMessage = {
   session_id?: string;
   buyer_id?: string;
@@ -98,6 +108,7 @@ export async function getDemoContext(): Promise<DemoContext> {
 export async function startNegotiation(
   context: DemoContext,
   requestedDiscountPct: number,
+  scenarioId: ScenarioId,
 ): Promise<NegotiationSessionResponse> {
   const response = await fetch(
     `${API_URL}/api/v1/negotiation/session`,
@@ -111,14 +122,18 @@ export async function startNegotiation(
         period: "demo",
         buyer_id: context.buyer.buyer_id,
         product_id: context.product.id,
+        scenario_id: scenarioId,
         buyer_signals: {
           identity_confidence:
             context.buyer.identity_confidence,
           intent_confidence:
             context.buyer.intent_confidence,
-          history_score: context.buyer.history_score,
-          violation_count: context.buyer.violation_count,
-          behavior_score: context.buyer.behavior_score,
+          history_score:
+            context.buyer.history_score,
+          violation_count:
+            context.buyer.violation_count,
+          behavior_score:
+            context.buyer.behavior_score,
         },
         requested_discount_pct: requestedDiscountPct,
         max_rounds: 5,

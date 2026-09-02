@@ -5,7 +5,10 @@ from app.core.database import get_db
 from app.models.buyer import Buyer
 from app.models.merchant import MerchantPolicy
 from app.models.product import Product
-
+from app.services.demo_scenarios import (
+    get_demo_scenario,
+    list_demo_scenarios,
+)
 
 router = APIRouter(
     prefix="/api/v1/demo",
@@ -95,4 +98,45 @@ def get_demo_context(
             "cost": product.cost,
             "inventory": product.inventory,
         },
+    }
+
+@router.get("/scenarios")
+def get_demo_scenarios():
+    return [
+        {
+            "id": scenario.id,
+            "title": scenario.title,
+            "description": scenario.description,
+            "requested_discount_pct": (
+                scenario.requested_discount_pct
+            ),
+            "max_rounds": scenario.max_rounds,
+        }
+        for scenario in list_demo_scenarios()
+    ]
+
+
+@router.get("/scenarios/{scenario_id}")
+def get_demo_scenario_detail(
+    scenario_id: str,
+):
+    scenario = get_demo_scenario(scenario_id)
+
+    if scenario is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Demo scenario not found",
+        )
+
+    return {
+        "id": scenario.id,
+        "title": scenario.title,
+        "description": scenario.description,
+        "buyer_signals": scenario.buyer_signals.model_dump(),
+        "requested_discount_pct": (
+            scenario.requested_discount_pct
+        ),
+        "max_rounds": scenario.max_rounds,
+        "allocated_budget": scenario.allocated_budget,
+        "inventory": scenario.inventory,
     }

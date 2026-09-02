@@ -19,6 +19,7 @@ from app.schemas.negotiation import (
     NegotiationStatus,
     TransactionStatus,
 )
+
 from app.services.buyer_service import BuyerService
 from app.services.decision_controller import NegotiationDecisionController
 from app.services.merchant_service import MerchantPolicyService
@@ -30,6 +31,7 @@ from app.agents.buyer_agent import BuyerAgent
 from app.agents.session import NegotiationSession
 from app.agents.seller_agent import SellerGrowthAgent
 from app.services.llm_service import LLMService
+from app.services.demo_scenarios import get_demo_scenario
 
 
 router = APIRouter()
@@ -98,6 +100,7 @@ def decide(
         allocated_budget=merchant_policy.daily_budget,
         reserve_budget=False,
     )
+
     transaction = TransactionService(
         db
     ).create_from_decision(
@@ -126,6 +129,7 @@ def decide(
         reason=result.reason,
     )
 
+
 @router.post(
     "/api/v1/negotiation/session",
     response_model=NegotiationSessionResponse,
@@ -136,6 +140,27 @@ def start_session(
     db: Session = Depends(get_db),
 ):
     llm_service = LLMService()
+
+    # ---------------------------------------------------------
+    # Optional demo scenario
+    # ---------------------------------------------------------
+
+    scenario = None
+
+    if request.scenario_id is not None:
+        scenario = get_demo_scenario(
+            request.scenario_id
+        )
+
+        if scenario is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Demo scenario not found",
+            )
+
+    # ---------------------------------------------------------
+    # Load buyer
+    # ---------------------------------------------------------
 
     buyer = BuyerService(db).get_by_buyer_id(
         request.buyer_id
@@ -153,6 +178,10 @@ def start_session(
             detail="Buyer is inactive",
         )
 
+    # ---------------------------------------------------------
+    # Load product
+    # ---------------------------------------------------------
+
     product = ProductService(db).get_by_id(
         product_id=request.product_id,
         merchant_id=request.merchant_id,
@@ -163,6 +192,10 @@ def start_session(
             status_code=404,
             detail="Product not found for merchant",
         )
+
+    # ---------------------------------------------------------
+    # Load merchant policy
+    # ---------------------------------------------------------
 
     merchant_policy = MerchantPolicyService(
         db
@@ -176,50 +209,137 @@ def start_session(
             detail="Merchant policy not found",
         )
 
+    # ---------------------------------------------------------
+    # Resolve effective scenario values
+    #
+    # Normal requests use request/database values.
+    # Demo scenarios override them without mutating the DB.
+    # ---------------------------------------------------------
+
+    buyer_signals = (
+        scenario.buyer_signals
+        if scenario is not None
+        else request.buyer_signals
+    )
+
+    requested_discount_pct = (
+        scenario.requested_discount_pct
+        if scenario is not None
+        else request.requested_discount_pct
+    )
+
+    max_rounds = (
+        scenario.max_rounds
+        if scenario is not None
+        else request.max_rounds
+    )
+
+    allocated_budget = (
+        scenario.allocated_budget
+        if (
+            scenario is not None
+            and scenario.allocated_budget is not None
+        )
+        else merchant_policy.daily_budget
+    )
+
+    inventory = (
+        scenario.inventory
+        if (
+            scenario is not None
+            and scenario.inventory is not None
+        )
+        else product.inventory
+    )
+
+    # ---------------------------------------------------------
+    # Budget namespace
+    #
+    # Demo scenarios get isolated Redis budget buckets so
+    # one scenario cannot reuse budget from another scenario.
+    #
+    # Normal negotiations continue using the original period.
+    # ---------------------------------------------------------
+
+    budget_period = (
+        f"{request.period}:{request.scenario_id}"
+        if request.scenario_id is not None
+        else request.period
+    )
+
+    # ---------------------------------------------------------
+    # Decision controller
+    # ---------------------------------------------------------
+
     controller = NegotiationDecisionController(
         get_redis()
+    )
+
+    # Include scenario ID so separate demos do not reuse the
+    # same negotiation/session identity.
+    session_suffix = (
+        f"_{request.scenario_id}"
+        if request.scenario_id is not None
+        else ""
     )
 
     session_id = (
         f"session_{request.buyer_id}_"
         f"{request.merchant_id}_"
         f"{request.product_id}"
+        f"{session_suffix}"
     )
+
+    # ---------------------------------------------------------
+    # Buyer agent
+    # ---------------------------------------------------------
 
     buyer_agent = BuyerAgent(
         buyer_id=request.buyer_id,
         merchant_id=request.merchant_id,
         product_id=str(request.product_id),
         session_id=session_id,
-        target_discount_pct=(
-            request.requested_discount_pct
-        ),
+        target_discount_pct=requested_discount_pct,
         llm_service=llm_service,
     )
+
+    # ---------------------------------------------------------
+    # Seller agent
+    # ---------------------------------------------------------
 
     seller_agent = SellerGrowthAgent(
         controller=controller,
         merchant_id=request.merchant_id,
-        period=request.period,
-        buyer_signals=request.buyer_signals,
+        period=budget_period,
+        buyer_signals=buyer_signals,
         max_discount_pct=(
             merchant_policy.max_discount_pct
         ),
-        allocated_budget=(
-            merchant_policy.daily_budget
-        ),
+        allocated_budget=allocated_budget,
         llm_service=llm_service,
     )
+
+    # ---------------------------------------------------------
+    # Negotiation session
+    # ---------------------------------------------------------
 
     session = NegotiationSession(
         buyer=buyer_agent,
         seller=seller_agent,
         product_price=product.price,
         product_cost=product.cost,
-        max_rounds=request.max_rounds,
+        inventory=inventory,
+        max_rounds=max_rounds,
     )
 
     result = session.start()
+
+    # ---------------------------------------------------------
+    # Transaction creation
+    #
+    # Only accepted/authorized negotiations create a
+    # transaction.
+    # ---------------------------------------------------------
 
     transaction_id = None
 
@@ -243,20 +363,24 @@ def start_session(
             product_id=product.id,
             proposed_offer={
                 "session_id": result.session_id,
+                "scenario_id": request.scenario_id,
                 "requested_discount_pct": (
-                    request.requested_discount_pct
+                    requested_discount_pct
                 ),
                 "product_price": product.price,
                 "product_cost": product.cost,
-                "allocated_budget": (
-                    merchant_policy.daily_budget
-                ),
+                "allocated_budget": allocated_budget,
+                "inventory": inventory,
             },
             result=decision_result,
             session_id=result.session_id,
         )
 
         transaction_id = transaction.transaction_id
+
+    # ---------------------------------------------------------
+    # Response
+    # ---------------------------------------------------------
 
     return NegotiationSessionResponse(
         session_id=result.session_id,
