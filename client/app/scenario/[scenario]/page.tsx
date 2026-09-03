@@ -4,29 +4,36 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import NegotiationDemo from "@/components/NegotiationDemo";
+import ScenarioIcon from "@/components/ScenarioIcon";
 import { getScenario } from "@/lib/scenarios";
 
 export default function ScenarioPage() {
   const params = useParams();
 
-  const scenarioId = Array.isArray(params.scenario)
-    ? params.scenario[0]
-    : params.scenario;
+  const scenarioId = String(params.scenario);
 
-  const scenario = scenarioId ? getScenario(scenarioId) : undefined;
+  const scenario = getScenario(scenarioId);
 
   if (!scenario) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#0a0a0a] p-6 text-white">
-        <div className="text-center">
-          <p className="text-sm text-red-400">Scenario not found.</p>
-
+      <main className="min-h-screen bg-[#0a0a0a] text-white">
+        <div className="mx-auto max-w-7xl px-6 py-10 lg:px-10">
           <Link
             href="/"
-            className="mt-5 inline-block rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black"
+            className="text-sm text-zinc-400 transition hover:text-white"
           >
-            Back to scenarios
+            ← All scenarios
           </Link>
+
+          <div className="mt-12 rounded-2xl border border-red-900/50 bg-red-950/20 p-6">
+            <p className="text-sm font-semibold text-red-300">
+              Scenario not found
+            </p>
+
+            <p className="mt-2 text-sm text-red-400">
+              The requested Arbiter scenario does not exist.
+            </p>
+          </div>
         </div>
       </main>
     );
@@ -35,13 +42,16 @@ export default function ScenarioPage() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="mx-auto max-w-7xl px-6 py-8 lg:px-10">
+        {/* ---------------------------------------------------------------- */}
+        {/* HEADER                                                           */}
+        {/* ---------------------------------------------------------------- */}
+
         <header className="flex items-center justify-between border-b border-zinc-800 pb-6">
           <Link
             href="/"
-            className="flex items-center gap-3 text-sm text-zinc-400 transition hover:text-white"
+            className="text-sm text-zinc-400 transition hover:text-white"
           >
-            <span>←</span>
-            <span>All scenarios</span>
+            ← All scenarios
           </Link>
 
           <div className="flex items-center gap-2 rounded-full border border-emerald-900/50 bg-emerald-950/30 px-3 py-1.5">
@@ -53,35 +63,49 @@ export default function ScenarioPage() {
           </div>
         </header>
 
-        <section className="pt-10">
-          <div className="flex items-start gap-4">
-            <div className="text-4xl">{scenario.icon}</div>
+        {/* ---------------------------------------------------------------- */}
+        {/* SCENARIO HEADER                                                  */}
+        {/* ---------------------------------------------------------------- */}
+
+        <section className="py-10">
+          <div className="flex items-start gap-5">
+            {/* PROFESSIONAL SCENARIO ICON */}
+
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-950 text-zinc-300">
+              <ScenarioIcon icon={scenario.icon} />
+            </div>
 
             <div>
               <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">
                 Arbiter Scenario
               </p>
 
-              <h1 className="mt-2 text-4xl font-semibold tracking-tight">
+              <h1 className="mt-2 text-4xl font-semibold tracking-tight lg:text-5xl">
                 {scenario.title}
               </h1>
 
-              <p className="mt-3 max-w-3xl text-zinc-400">
+              <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400">
                 {scenario.description}
               </p>
             </div>
           </div>
 
-          <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          {/* DEMONSTRATION */}
+
+          <div className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
             <p className="text-xs uppercase tracking-[0.18em] text-zinc-600">
               Demonstrates
             </p>
 
-            <p className="mt-2 text-sm text-zinc-300">
+            <p className="mt-2 text-sm leading-6 text-zinc-300">
               {scenario.demonstration}
             </p>
           </div>
         </section>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* NEGOTIATION ENGINE                                               */}
+        {/* ---------------------------------------------------------------- */}
 
         <NegotiationDemo scenario={scenario} />
       </div>

@@ -123,6 +123,7 @@ export async function startNegotiation(
         buyer_id: context.buyer.buyer_id,
         product_id: context.product.id,
         scenario_id: scenarioId,
+
         buyer_signals: {
           identity_confidence:
             context.buyer.identity_confidence,
@@ -135,7 +136,10 @@ export async function startNegotiation(
           behavior_score:
             context.buyer.behavior_score,
         },
-        requested_discount_pct: requestedDiscountPct,
+
+        requested_discount_pct:
+          requestedDiscountPct,
+
         max_rounds: 5,
       }),
     },

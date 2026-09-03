@@ -222,11 +222,7 @@ def start_session(
         else request.buyer_signals
     )
 
-    requested_discount_pct = (
-        scenario.requested_discount_pct
-        if scenario is not None
-        else request.requested_discount_pct
-    )
+    requested_discount_pct = request.requested_discount_pct
 
     max_rounds = (
         scenario.max_rounds
