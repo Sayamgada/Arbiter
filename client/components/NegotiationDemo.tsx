@@ -349,16 +349,33 @@ export default function NegotiationDemo({ scenario }: Props) {
       return;
     }
 
-    const razorpayKey = process.env.RAZORPAY_KEY_ID;
+    let razorpayKey: string;
 
-    if (!razorpayKey) {
+    try {
+      const response = await fetch("/api/config/razorpay");
+
+      if (!response.ok) {
+        throw new Error("RAZORPAY_KEY_ID is not configured.");
+      }
+
+      const data = await response.json();
+
+      razorpayKey = data.keyId;
+
+      if (!razorpayKey) {
+        throw new Error("RAZORPAY_KEY_ID is not configured.");
+      }
+    } catch (err) {
       setPaymentState("failed");
 
-      setPaymentError("RAZORPAY_KEY_ID is not configured.");
+      setPaymentError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load Razorpay configuration.",
+      );
 
       return;
     }
-
     try {
       setPaymentError(null);
 
