@@ -397,13 +397,13 @@ export default function NegotiationDemo({
     }
 
     const razorpayKey =
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+      process.env.RAZORPAY_KEY_ID;
 
     if (!razorpayKey) {
       setPaymentState("failed");
 
       setPaymentError(
-        "NEXT_PUBLIC_RAZORPAY_KEY_ID is not configured.",
+        "RAZORPAY_KEY_ID is not configured.",
       );
 
       return;
