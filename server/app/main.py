@@ -13,6 +13,11 @@ app = FastAPI(
     description="Trust-Aware Revenue Negotiation",
     version="0.1.0",
 )
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "http://localhost:3000",
