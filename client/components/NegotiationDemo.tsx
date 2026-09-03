@@ -26,9 +26,7 @@ type Props = {
 
 declare global {
   interface Window {
-    Razorpay: new (
-      options: RazorpayOptions,
-    ) => RazorpayInstance;
+    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
   }
 }
 
@@ -81,12 +79,8 @@ function percentage(value: number | null | undefined) {
   return `${value.toFixed(2)}%`;
 }
 
-function calculateTrust(
-  signals: Scenario["buyerSignals"],
-) {
-  const violationScore =
-    (1 - Math.min(signals.violation_count / 5, 1)) *
-    100;
+function calculateTrust(signals: Scenario["buyerSignals"]) {
+  const violationScore = (1 - Math.min(signals.violation_count / 5, 1)) * 100;
 
   const weighted = {
     identity: signals.identity_confidence * 0.3,
@@ -140,8 +134,7 @@ function messageLabel(message: NegotiationMessage) {
       return "BUYER REQUEST";
 
     case "counter_offer":
-      return message.discount_value &&
-        message.discount_value > 0
+      return message.discount_value && message.discount_value > 0
         ? "SELLER COUNTER"
         : "BUYER COUNTER";
 
@@ -158,9 +151,7 @@ function messageLabel(message: NegotiationMessage) {
       return "FINAL";
 
     default:
-      return message.message_type
-        .replaceAll("_", " ")
-        .toUpperCase();
+      return message.message_type.replaceAll("_", " ").toUpperCase();
   }
 }
 
@@ -168,8 +159,7 @@ function isBuyerMessage(message: NegotiationMessage) {
   return (
     message.message_type === "purchase_request" ||
     (message.message_type === "counter_offer" &&
-      (!message.discount_value ||
-        message.discount_value === 0)) ||
+      (!message.discount_value || message.discount_value === 0)) ||
     message.message_type === "accept"
   );
 }
@@ -186,32 +176,27 @@ function StatusBadge({
   const config = {
     accepted: {
       label: "NEGOTIATION ACCEPTED",
-      className:
-        "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
     },
 
     rejected: {
       label: "REJECTED",
-      className:
-        "border-red-500/30 bg-red-500/10 text-red-300",
+      className: "border-red-500/30 bg-red-500/10 text-red-300",
     },
 
     blocked: {
       label: "BLOCKED",
-      className:
-        "border-red-500/30 bg-red-500/10 text-red-300",
+      className: "border-red-500/30 bg-red-500/10 text-red-300",
     },
 
     expired: {
       label: "EXPIRED",
-      className:
-        "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      className: "border-amber-500/30 bg-amber-500/10 text-amber-300",
     },
 
     active: {
       label: "ACTIVE",
-      className:
-        "border-blue-500/30 bg-blue-500/10 text-blue-300",
+      className: "border-blue-500/30 bg-blue-500/10 text-blue-300",
     },
   }[status];
 
@@ -228,52 +213,39 @@ function StatusBadge({
 /* Main component                                                             */
 /* -------------------------------------------------------------------------- */
 
-export default function NegotiationDemo({
-  scenario,
-}: Props) {
-  const [result, setResult] =
-    useState<NegotiationSessionResponse | null>(null);
+export default function NegotiationDemo({ scenario }: Props) {
+  const [result, setResult] = useState<NegotiationSessionResponse | null>(null);
 
-  const [context, setContext] =
-    useState<DemoContext | null>(null);
+  const [context, setContext] = useState<DemoContext | null>(null);
 
   const [loading, setLoading] = useState(false);
 
-  const [error, setError] =
-    useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const [requestedDiscount, setRequestedDiscount] =
-    useState(scenario.requestedDiscountPct);
+  const [requestedDiscount, setRequestedDiscount] = useState(
+    scenario.requestedDiscountPct,
+  );
 
   /*
    * Trust is intentionally only exposed after negotiation begins.
    */
-  const [showTrustBreakdown, setShowTrustBreakdown] =
-    useState(false);
+  const [showTrustBreakdown, setShowTrustBreakdown] = useState(false);
 
   /* ------------------------------------------------------------------------ */
   /* Payment state                                                            */
   /* ------------------------------------------------------------------------ */
 
   const [paymentState, setPaymentState] = useState<
-    | "idle"
-    | "creating"
-    | "checkout"
-    | "verifying"
-    | "authorized"
-    | "failed"
+    "idle" | "creating" | "checkout" | "verifying" | "authorized" | "failed"
   >("idle");
 
-  const [paymentError, setPaymentError] =
-    useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   /* ------------------------------------------------------------------------ */
   /* Trust                                                                    */
   /* ------------------------------------------------------------------------ */
 
-  const trust = calculateTrust(
-    scenario.buyerSignals,
-  );
+  const trust = calculateTrust(scenario.buyerSignals);
 
   const authority = getAuthority(trust.total);
 
@@ -304,9 +276,7 @@ export default function NegotiationDemo({
       setResult(response);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to execute scenario.",
+        err instanceof Error ? err.message : "Unable to execute scenario.",
       );
     } finally {
       setLoading(false);
@@ -335,9 +305,7 @@ export default function NegotiationDemo({
 
   async function loadRazorpay() {
     if (typeof window === "undefined") {
-      throw new Error(
-        "Razorpay can only be loaded in the browser.",
-      );
+      throw new Error("Razorpay can only be loaded in the browser.");
     }
 
     if (window.Razorpay) {
@@ -350,42 +318,27 @@ export default function NegotiationDemo({
       );
 
       if (existing) {
-        existing.addEventListener(
-          "load",
-          () => resolve(),
-          { once: true },
-        );
+        existing.addEventListener("load", () => resolve(), { once: true });
 
         existing.addEventListener(
           "error",
-          () =>
-            reject(
-              new Error(
-                "Unable to load Razorpay Checkout.",
-              ),
-            ),
+          () => reject(new Error("Unable to load Razorpay Checkout.")),
           { once: true },
         );
 
         return;
       }
 
-      const script =
-        document.createElement("script");
+      const script = document.createElement("script");
 
-      script.src =
-        "https://checkout.razorpay.com/v1/checkout.js";
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
 
       script.async = true;
 
       script.onload = () => resolve();
 
       script.onerror = () =>
-        reject(
-          new Error(
-            "Unable to load Razorpay Checkout.",
-          ),
-        );
+        reject(new Error("Unable to load Razorpay Checkout."));
 
       document.body.appendChild(script);
     });
@@ -396,15 +349,12 @@ export default function NegotiationDemo({
       return;
     }
 
-    const razorpayKey =
-      process.env.RAZORPAY_KEY_ID;
+    const razorpayKey = process.env.RAZORPAY_KEY_ID;
 
     if (!razorpayKey) {
       setPaymentState("failed");
 
-      setPaymentError(
-        "RAZORPAY_KEY_ID is not configured.",
-      );
+      setPaymentError("RAZORPAY_KEY_ID is not configured.");
 
       return;
     }
@@ -418,9 +368,7 @@ export default function NegotiationDemo({
        */
       setPaymentState("creating");
 
-      const order = await createPaymentOrder(
-        result.transaction_id,
-      );
+      const order = await createPaymentOrder(result.transaction_id);
 
       /*
        * Step 2:
@@ -429,9 +377,7 @@ export default function NegotiationDemo({
       await loadRazorpay();
 
       if (!window.Razorpay) {
-        throw new Error(
-          "Razorpay Checkout is unavailable.",
-        );
+        throw new Error("Razorpay Checkout is unavailable.");
       }
 
       /*
@@ -440,69 +386,66 @@ export default function NegotiationDemo({
        */
       setPaymentState("checkout");
 
-      const checkout =
-        new window.Razorpay({
-          key: razorpayKey,
+      const checkout = new window.Razorpay({
+        key: razorpayKey,
 
-          amount: order.amount,
+        amount: order.amount,
 
-          currency: order.currency,
+        currency: order.currency,
 
-          name: "Arbiter",
+        name: "Arbiter",
 
-          description:
-            "Arbiter authorized commerce transaction",
+        description: "Arbiter authorized commerce transaction",
 
-          order_id:
-            order.razorpay_order_id,
+        order_id: order.razorpay_order_id,
 
-          handler: async (payment) => {
-            try {
-              /*
-               * Step 4:
-               * Send Razorpay's signed response
-               * back to Arbiter.
-               */
-              setPaymentState("verifying");
+        handler: async (payment) => {
+          try {
+            /*
+             * Step 4:
+             * Send Razorpay's signed response
+             * back to Arbiter.
+             */
+            setPaymentState("verifying");
 
-              await verifyPayment(
-                result.transaction_id!,
-                payment.razorpay_order_id,
-                payment.razorpay_payment_id,
-                payment.razorpay_signature,
-              );
+            await verifyPayment(
+              result.transaction_id!,
+              payment.razorpay_order_id,
+              payment.razorpay_payment_id,
+              payment.razorpay_signature,
+            );
 
-              /*
-               * Step 5:
-               * Backend verification succeeded.
-               */
-              setPaymentState("authorized");
-              setPaymentError(null);
-            } catch (err) {
-              setPaymentState("failed");
+            /*
+             * Step 5:
+             * Backend verification succeeded.
+             */
+            setPaymentState("authorized");
+            setPaymentError(null);
+          } catch (err) {
+            setPaymentState("failed");
 
-              setPaymentError(
-                err instanceof Error
-                  ? err.message
-                  : "Payment verification failed.",
-              );
-            }
+            setPaymentError(
+              err instanceof Error
+                ? err.message
+                : "Payment verification failed.",
+            );
+          }
+        },
+
+        modal: {
+          ondismiss: () => {
+            /*
+             * Do not mark payment as failed if
+             * the user simply closes Checkout.
+             */
+            setPaymentState("idle");
           },
+        },
 
-          modal: {
-            ondismiss: () => {
-              /*
-               * Do not mark payment as failed if
-               * the user simply closes Checkout.
-               */
-              setPaymentState("idle");
-            },
-          },
-
-          theme: {
-            color: "#ffffff",
-          },
-        });
+        theme: {
+          color: "#ffffff",
+        },
+      });
 
       checkout.open();
     } catch (err) {
@@ -540,30 +483,22 @@ export default function NegotiationDemo({
             </h2>
 
             <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">
-              Choose the discount the buyer will request.
-              Arbiter will then evaluate the request against
-              trust, merchant policy, autonomy budget,
-              inventory, and product economics.
+              Choose the discount the buyer will request. Arbiter will then
+              evaluate the request against trust, merchant policy, autonomy
+              budget, inventory, and product economics.
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <InfoBox
                 label="Listed price"
-                value={
-                  context
-                    ? money(context.product.price)
-                    : "₹10,000"
-                }
+                value={context ? money(context.product.price) : "₹10,000"}
               />
 
               <InfoBox
                 label="Merchant ceiling"
                 value={
                   context
-                    ? percentage(
-                        context.merchant
-                          .max_discount_pct,
-                      )
+                    ? percentage(context.merchant.max_discount_pct)
                     : "12.00%"
                 }
               />
@@ -572,12 +507,8 @@ export default function NegotiationDemo({
                 label="Requested price"
                 value={money(
                   context?.product.price
-                    ? context.product.price *
-                        (1 -
-                          requestedDiscount / 100)
-                    : 10000 *
-                        (1 -
-                          requestedDiscount / 100),
+                    ? context.product.price * (1 - requestedDiscount / 100)
+                    : 10000 * (1 - requestedDiscount / 100),
                 )}
               />
             </div>
@@ -601,9 +532,7 @@ export default function NegotiationDemo({
                 </p>
               </div>
 
-              <span className="text-xs text-zinc-600">
-                User controlled
-              </span>
+              <span className="text-xs text-zinc-600">User controlled</span>
             </div>
 
             <input
@@ -613,9 +542,7 @@ export default function NegotiationDemo({
               step={1}
               value={requestedDiscount}
               onChange={(event) =>
-                setRequestedDiscount(
-                  Number(event.target.value),
-                )
+                setRequestedDiscount(Number(event.target.value))
               }
               className="mt-7 w-full accent-white"
             />
@@ -628,9 +555,8 @@ export default function NegotiationDemo({
 
             <div className="mt-5 rounded-xl border border-zinc-800 bg-black/20 p-3">
               <p className="text-xs leading-5 text-zinc-500">
-                The requested discount is only the buyer's
-                starting position. Arbiter's deterministic
-                controller decides what the seller can
+                The requested discount is only the buyer's starting position.
+                Arbiter's deterministic controller decides what the seller can
                 actually authorize.
               </p>
             </div>
@@ -641,9 +567,7 @@ export default function NegotiationDemo({
               disabled={loading}
               className="mt-5 w-full rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading
-                ? "Running negotiation..."
-                : "Start negotiation"}
+              {loading ? "Running negotiation..." : "Start negotiation"}
             </button>
           </div>
         </div>
@@ -659,9 +583,7 @@ export default function NegotiationDemo({
             Execution error
           </p>
 
-          <p className="mt-2 text-sm text-red-200">
-            {error}
-          </p>
+          <p className="mt-2 text-sm text-red-200">{error}</p>
         </div>
       )}
 
@@ -690,11 +612,7 @@ export default function NegotiationDemo({
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setShowTrustBreakdown(
-                      (current) => !current,
-                    )
-                  }
+                  onClick={() => setShowTrustBreakdown((current) => !current)}
                   className="rounded-full text-xs text-zinc-600 transition hover:text-zinc-200"
                   aria-label="View trust score breakdown"
                 >
@@ -712,10 +630,7 @@ export default function NegotiationDemo({
                 <div
                   className={`h-full rounded-full ${authority.barClassName}`}
                   style={{
-                    width: `${Math.min(
-                      trust.total,
-                      100,
-                    )}%`,
+                    width: `${Math.min(trust.total, 100)}%`,
                   }}
                 />
               </div>
@@ -724,32 +639,18 @@ export default function NegotiationDemo({
                 <TrustBreakdown
                   scenario={scenario}
                   trust={trust}
-                  onClose={() =>
-                    setShowTrustBreakdown(false)
-                  }
+                  onClose={() => setShowTrustBreakdown(false)}
                 />
               )}
             </div>
 
-            <Metric
-              label="Requested"
-              value={percentage(
-                requestedDiscount,
-              )}
-            />
+            <Metric label="Requested" value={percentage(requestedDiscount)} />
 
-            <Metric
-              label="Rounds"
-              value={String(result.rounds)}
-            />
+            <Metric label="Rounds" value={String(result.rounds)} />
 
             <Metric
               label="Status"
-              value={
-                <StatusBadge
-                  status={result.status}
-                />
-              }
+              value={<StatusBadge status={result.status} />}
             />
           </div>
 
@@ -782,87 +683,63 @@ export default function NegotiationDemo({
               </div>
 
               <div className="max-h-[650px] space-y-3 overflow-y-auto p-5">
-                {result.messages.map(
-                  (message, index) => {
-                    const buyer =
-                      isBuyerMessage(message);
+                {result.messages.map((message, index) => {
+                  const buyer = isBuyerMessage(message);
 
-                    return (
+                  return (
+                    <div
+                      key={`${message.round_number}-${index}`}
+                      className={`flex ${
+                        buyer ? "justify-start" : "justify-end"
+                      }`}
+                    >
                       <div
-                        key={`${message.round_number}-${index}`}
-                        className={`flex ${
+                        className={`max-w-[85%] rounded-2xl border p-4 ${
                           buyer
-                            ? "justify-start"
-                            : "justify-end"
+                            ? "border-zinc-800 bg-zinc-900"
+                            : "border-blue-900/40 bg-blue-950/20"
                         }`}
                       >
-                        <div
-                          className={`max-w-[85%] rounded-2xl border p-4 ${
-                            buyer
-                              ? "border-zinc-800 bg-zinc-900"
-                              : "border-blue-900/40 bg-blue-950/20"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <span
-                              className={`text-[10px] font-bold tracking-[0.16em] ${
-                                buyer
-                                  ? "text-zinc-500"
-                                  : "text-blue-400"
-                              }`}
-                            >
-                              {messageLabel(
-                                message,
-                              )}
-                            </span>
+                        <div className="flex items-center justify-between gap-4">
+                          <span
+                            className={`text-[10px] font-bold tracking-[0.16em] ${
+                              buyer ? "text-zinc-500" : "text-blue-400"
+                            }`}
+                          >
+                            {messageLabel(message)}
+                          </span>
 
-                            <span className="text-[10px] text-zinc-600">
-                              R
-                              {
-                                message.round_number
-                              }
-                            </span>
-                          </div>
-
-                          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
-                            {message.message}
-                          </p>
-
-                          {(message.price !==
-                            undefined ||
-                            message.proposed_price !==
-                              undefined ||
-                            message.discount_pct !==
-                              undefined) && (
-                            <div className="mt-4 flex flex-wrap gap-2">
-                              {(message.price !==
-                                undefined ||
-                                message.proposed_price !==
-                                  undefined) && (
-                                <span className="rounded-lg bg-black/30 px-2.5 py-1.5 text-xs text-zinc-300">
-                                  {money(
-                                    message.price ??
-                                      message.proposed_price,
-                                  )}
-                                </span>
-                              )}
-
-                              {message.discount_pct !==
-                                undefined && (
-                                <span className="rounded-lg bg-black/30 px-2.5 py-1.5 text-xs text-zinc-300">
-                                  {percentage(
-                                    message.discount_pct,
-                                  )}{" "}
-                                  discount
-                                </span>
-                              )}
-                            </div>
-                          )}
+                          <span className="text-[10px] text-zinc-600">
+                            R{message.round_number}
+                          </span>
                         </div>
+
+                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-200">
+                          {message.message}
+                        </p>
+
+                        {(message.price !== undefined ||
+                          message.proposed_price !== undefined ||
+                          message.discount_pct !== undefined) && (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {(message.price !== undefined ||
+                              message.proposed_price !== undefined) && (
+                              <span className="rounded-lg bg-black/30 px-2.5 py-1.5 text-xs text-zinc-300">
+                                {money(message.price ?? message.proposed_price)}
+                              </span>
+                            )}
+
+                            {message.discount_pct !== undefined && (
+                              <span className="rounded-lg bg-black/30 px-2.5 py-1.5 text-xs text-zinc-300">
+                                {percentage(message.discount_pct)} discount
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    );
-                  },
-                )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -877,9 +754,7 @@ export default function NegotiationDemo({
                 </p>
 
                 <div className="mt-4">
-                  <StatusBadge
-                    status={result.status}
-                  />
+                  <StatusBadge status={result.status} />
                 </div>
 
                 <p className="mt-4 text-sm leading-6 text-zinc-300">
@@ -889,11 +764,8 @@ export default function NegotiationDemo({
 
               {/* FINAL AUTHORIZATION GATE */}
 
-              {scenario.id ===
-                "final-authorization" &&
-                result.transaction_id && (
-                  <FinalAuthorizationGate />
-                )}
+              {scenario.id === "final-authorization" &&
+                result.transaction_id && <FinalAuthorizationGate />}
 
               {/* TRANSACTION */}
 
@@ -909,26 +781,18 @@ export default function NegotiationDemo({
 
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     <div>
-                      <p className="text-xs text-zinc-600">
-                        Final price
-                      </p>
+                      <p className="text-xs text-zinc-600">Final price</p>
 
                       <p className="mt-1 text-lg font-semibold text-white">
-                        {money(
-                          result.final_price,
-                        )}
+                        {money(result.final_price)}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-zinc-600">
-                        Discount
-                      </p>
+                      <p className="text-xs text-zinc-600">Discount</p>
 
                       <p className="mt-1 text-lg font-semibold text-white">
-                        {percentage(
-                          result.final_discount_pct,
-                        )}
+                        {percentage(result.final_discount_pct)}
                       </p>
                     </div>
                   </div>
@@ -947,15 +811,14 @@ export default function NegotiationDemo({
 
               {/* RAZORPAY */}
 
-              {result.transaction_id &&
-                result.status === "accepted" && (
-                  <RazorpayPaymentCard
-                    result={result}
-                    paymentState={paymentState}
-                    paymentError={paymentError}
-                    onPay={handlePayment}
-                  />
-                )}
+              {result.transaction_id && result.status === "accepted" && (
+                <RazorpayPaymentCard
+                  result={result}
+                  paymentState={paymentState}
+                  paymentError={paymentError}
+                  onPay={handlePayment}
+                />
+              )}
 
               {/* COMMERCE STATE */}
 
@@ -971,33 +834,25 @@ export default function NegotiationDemo({
                 <div className="mt-4 space-y-2 text-xs">
                   <Row
                     label="Listed price"
-                    value={money(
-                      context.product.price,
-                    )}
+                    value={money(context.product.price)}
                   />
 
                   <Row
                     label="Inventory"
                     value={String(
-                      scenario.inventory ??
-                        context.product.inventory,
+                      scenario.inventory ?? context.product.inventory,
                     )}
                   />
 
                   <Row
                     label="Merchant ceiling"
-                    value={percentage(
-                      context.merchant
-                        .max_discount_pct,
-                    )}
+                    value={percentage(context.merchant.max_discount_pct)}
                   />
 
                   <Row
                     label="Autonomy budget"
                     value={money(
-                      scenario.allocatedBudget ??
-                        context.merchant
-                          .daily_budget,
+                      scenario.allocatedBudget ?? context.merchant.daily_budget,
                     )}
                   />
                 </div>
@@ -1026,32 +881,20 @@ function FinalAuthorizationGate() {
       </p>
 
       <div className="mt-5 space-y-3">
-        <GateRow
-          label="Negotiation accepted"
-        />
+        <GateRow label="Negotiation accepted" />
 
-        <GateRow
-          label="Trust policy"
-        />
+        <GateRow label="Trust policy" />
 
-        <GateRow
-          label="Merchant bounds"
-        />
+        <GateRow label="Merchant bounds" />
 
-        <GateRow
-          label="Autonomy budget"
-        />
+        <GateRow label="Autonomy budget" />
 
-        <GateRow
-          label="Cost protection"
-        />
+        <GateRow label="Cost protection" />
       </div>
 
       <div className="mt-5 border-t border-emerald-900/40 pt-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-zinc-500">
-            Authorization result
-          </span>
+          <span className="text-xs text-zinc-500">Authorization result</span>
 
           <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold tracking-wider text-emerald-300">
             TRANSACTION AUTHORIZED
@@ -1062,20 +905,12 @@ function FinalAuthorizationGate() {
   );
 }
 
-function GateRow({
-  label,
-}: {
-  label: string;
-}) {
+function GateRow({ label }: { label: string }) {
   return (
     <div className="flex items-center justify-between text-xs">
-      <span className="text-zinc-400">
-        {label}
-      </span>
+      <span className="text-zinc-400">{label}</span>
 
-      <span className="font-semibold text-emerald-400">
-        ✓ PASS
-      </span>
+      <span className="font-semibold text-emerald-400">✓ PASS</span>
     </div>
   );
 }
@@ -1101,8 +936,7 @@ function RazorpayPaymentCard({
   paymentError: string | null;
   onPay: () => void;
 }) {
-  const paid =
-    paymentState === "authorized";
+  const paid = paymentState === "authorized";
 
   return (
     <div
@@ -1133,9 +967,7 @@ function RazorpayPaymentCard({
       </div>
 
       <div className="mt-5 rounded-xl border border-zinc-800 bg-black/20 p-4">
-        <p className="text-xs text-zinc-600">
-          Final amount
-        </p>
+        <p className="text-xs text-zinc-600">Final amount</p>
 
         <p className="mt-1 text-2xl font-semibold text-white">
           {money(result.final_price)}
@@ -1168,26 +1000,22 @@ function RazorpayPaymentCard({
               ? "Creating Razorpay order..."
               : paymentState === "checkout"
                 ? "Razorpay Checkout open..."
-                : paymentState ===
-                    "verifying"
+                : paymentState === "verifying"
                   ? "Verifying payment..."
                   : "Pay with Razorpay"}
           </button>
 
           {paymentError && (
             <div className="mt-3 rounded-lg border border-red-900/50 bg-red-950/20 p-3">
-              <p className="text-xs text-red-300">
-                {paymentError}
-              </p>
+              <p className="text-xs text-red-300">{paymentError}</p>
             </div>
           )}
 
-          {paymentState === "failed" &&
-            !paymentError && (
-              <p className="mt-3 text-xs text-red-400">
-                Payment could not be completed.
-              </p>
-            )}
+          {paymentState === "failed" && !paymentError && (
+            <p className="mt-3 text-xs text-red-400">
+              Payment could not be completed.
+            </p>
+          )}
         </>
       )}
     </div>
@@ -1232,68 +1060,44 @@ function TrustBreakdown({
       <div className="mt-5 space-y-4">
         <TrustRow
           label="Identity confidence"
-          value={
-            scenario.buyerSignals
-              .identity_confidence
-          }
+          value={scenario.buyerSignals.identity_confidence}
           weight="30%"
-          contribution={
-            trust.weighted.identity
-          }
+          contribution={trust.weighted.identity}
         />
 
         <TrustRow
           label="Intent confidence"
-          value={
-            scenario.buyerSignals
-              .intent_confidence
-          }
+          value={scenario.buyerSignals.intent_confidence}
           weight="25%"
-          contribution={
-            trust.weighted.intent
-          }
+          contribution={trust.weighted.intent}
         />
 
         <TrustRow
           label="History score"
-          value={
-            scenario.buyerSignals
-              .history_score
-          }
+          value={scenario.buyerSignals.history_score}
           weight="20%"
-          contribution={
-            trust.weighted.history
-          }
+          contribution={trust.weighted.history}
         />
 
         <TrustRow
           label="Violation score"
           value={trust.violationScore}
           weight="15%"
-          contribution={
-            trust.weighted.violations
-          }
+          contribution={trust.weighted.violations}
           suffix={`${scenario.buyerSignals.violation_count} violations`}
         />
 
         <TrustRow
           label="Behavior score"
-          value={
-            scenario.buyerSignals
-              .behavior_score
-          }
+          value={scenario.buyerSignals.behavior_score}
           weight="10%"
-          contribution={
-            trust.weighted.behavior
-          }
+          contribution={trust.weighted.behavior}
         />
       </div>
 
       <div className="mt-5 border-t border-zinc-800 pt-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-zinc-500">
-            Final calculated trust
-          </span>
+          <span className="text-xs text-zinc-500">Final calculated trust</span>
 
           <span className="font-semibold text-white">
             {trust.total.toFixed(2)} / 100
@@ -1301,8 +1105,7 @@ function TrustBreakdown({
         </div>
 
         <p className="mt-2 text-[10px] leading-4 text-zinc-600">
-          Identity × 30% + Intent × 25% +
-          History × 20% + Violations × 15% +
+          Identity × 30% + Intent × 25% + History × 20% + Violations × 15% +
           Behavior × 10%
         </p>
       </div>
@@ -1326,9 +1129,7 @@ function TrustRow({
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-zinc-400">
-          {label}
-        </span>
+        <span className="text-xs text-zinc-400">{label}</span>
 
         <span className="text-xs font-medium text-zinc-200">
           {value.toFixed(0)}
@@ -1353,62 +1154,36 @@ function TrustRow({
 /* Generic UI                                                                 */
 /* -------------------------------------------------------------------------- */
 
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
       <p className="text-xs uppercase tracking-[0.16em] text-zinc-600">
         {label}
       </p>
 
-      <div className="mt-2 text-lg font-semibold text-zinc-100">
-        {value}
-      </div>
+      <div className="mt-2 text-lg font-semibold text-zinc-100">{value}</div>
     </div>
   );
 }
 
-function InfoBox({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function InfoBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-zinc-800 bg-black/20 p-4">
       <p className="text-[10px] uppercase tracking-[0.14em] text-zinc-600">
         {label}
       </p>
 
-      <p className="mt-2 text-sm font-semibold text-zinc-200">
-        {value}
-      </p>
+      <p className="mt-2 text-sm font-semibold text-zinc-200">{value}</p>
     </div>
   );
 }
 
-function Row({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-zinc-600">
-        {label}
-      </span>
+      <span className="text-zinc-600">{label}</span>
 
-      <span className="text-zinc-300">
-        {value}
-      </span>
+      <span className="text-zinc-300">{value}</span>
     </div>
   );
 }
